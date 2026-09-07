@@ -1,0 +1,2994 @@
+const APP_VERSION = '1.6.7';
+
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const loadingScreen = $('#loadingScreen');
+
+const eventList = $('#eventList');
+const pastEventList = $('#pastEventList');
+const pastEventsBlock = $('#pastEventsBlock');
+const nextEvent = $('#nextEvent');
+const modal = $('#eventModal');
+const modalContent = $('#modalContent');
+const filterSelect = $('#filterSelect');
+const initiativeList = $('#initiativeList');
+const pastInitiativeList = $('#pastInitiativeList');
+const pastInitiativeBlock = $('#pastInitiativeBlock');
+const suggestInitiativeBtn = $('#suggestInitiativeBtn');
+const initiativeSubmitModal = $('#initiativeSubmitModal');
+const initiativeSubmitForm = $('#initiativeSubmitForm');
+const initiativeSubmitStatus = $('#initiativeSubmitStatus');
+const submitInitiativeButton = $('#submitInitiativeButton');
+const ideaBankBtn = $('#ideaBankBtn');
+const ideaSubmitModal = $('#ideaSubmitModal');
+const ideaSubmitForm = $('#ideaSubmitForm');
+const ideaSubmitStatus = $('#ideaSubmitStatus');
+const submitIdeaButton = $('#submitIdeaButton');
+const ideaPollList = $('#ideaPollList');
+const ideaPipelineList = $('#ideaPipelineList');
+const ideaVoteModal = $('#ideaVoteModal');
+const ideaVoteForm = $('#ideaVoteForm');
+const ideaVoteStatus = $('#ideaVoteStatus');
+const ideaVoteSubmitButton = $('#ideaVoteSubmitButton');
+const ideaVoteTitle = $('#ideaVoteTitle');
+const ideaVoteId = $('#ideaVoteId');
+const ideaVoteName = $('#ideaVoteName');
+const joinModal = $('#joinModal');
+const joinForm = $('#joinForm');
+const joinStatus = $('#joinStatus');
+const joinSubmitButton = $('#joinSubmitButton');
+const joinActivityTitle = $('#joinActivityTitle');
+const joinActivityId = $('#joinActivityId');
+const joinActivityName = $('#joinActivityName');
+
+const notificationPromptCard = $('#notificationPromptCard');
+const notificationPromptText = $('#notificationPromptText');
+const notificationPromptBtn = $('#notificationPromptBtn');
+const notificationPromptDismiss = $('#notificationPromptDismiss');
+const notificationStatusText = $('#notificationStatusText');
+const notificationToggleBtn = $('#notificationToggleBtn');
+const notificationHelpText = $('#notificationHelpText');
+const newActivityModal = $('#newActivityModal');
+const newActivityTitle = $('#newActivityTitle');
+const newActivityText = $('#newActivityText');
+const newActivityOpenBtn = $('#newActivityOpenBtn');
+const newActivityCloseBtn = $('#newActivityCloseBtn');
+
+let events = [];
+let initiativer = [];
+let participants = [];
+let ideas = [];
+let ideaVotes = [];
+let ideasLoading = true;
+let initiativesLoading = true;
+let currentFilter = 'all';
+
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw9YtJUhbhenGvwUzLL3qPZVUUqsGdQ5UyjF3hBMK1UcRzo3wtuZQhXHTpjcS99aZQ5/exec';
+
+function todayMidnight(){
+  const d = new Date();
+  d.setHours(0,0,0,0);
+  return d;
+}
+
+function isUpcoming(item){
+  return new Date(item.date + 'T00:00:00') >= todayMidnight();
+}
+
+function daDate(iso, weekday=true){
+  return new Intl.DateTimeFormat('da-DK',{
+    weekday: weekday ? 'long' : undefined,
+    day:'numeric',
+    month:'long',
+    year:'numeric'
+  }).format(new Date(iso + 'T12:00:00'));
+}
+
+
+function tag(type){
+  return type === 'internal' ? 'Internt arrangement' : 'Offentligt arrangement';
+}
+
+function sortByDate(items){
+  return [...items].sort((a,b) => a.date.localeCompare(b.date));
+}
+
+function upcomingEvents(){
+  return sortByDate(events).filter(isUpcoming);
+}
+
+function pastEvents(){
+  return sortByDate(events).filter(e => !isUpcoming(e)).reverse();
+}
+
+function shownEvents(){
+  return upcomingEvents().filter(e => currentFilter === 'all' || e.type === currentFilter);
+}
+
+function byId(id){
+  return events.find(e => e.id === id);
+}
+
+
+function googleCalendarUrl(item){
+  if(!item.start || !item.end) return '#';
+  const start = item.date.replaceAll('-','') + 'T' + item.start.replace(':','') + '00';
+  const end = item.date.replaceAll('-','') + 'T' + item.end.replace(':','') + '00';
+  const text = encodeURIComponent(item.title + (item.subtitle ? ' – ' + item.subtitle : ''));
+  const details = encodeURIComponent(`${item.text || item.description || ''}\n\n${item.timeText || ''}`);
+  const location = encodeURIComponent(item.place || 'Odd Fellow Bygningen, Frederiksgade 15, Slagelse');
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${start}/${end}&details=${details}&location=${location}`;
+}
+
+function addMinutes(time, minutes){
+  const [hours, mins] = String(time || '00:00').split(':').map(Number);
+  const date = new Date(2000, 0, 1, hours || 0, (mins || 0) + minutes);
+  return `${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+}
+
+function renderEventHero(){
+  const e = upcomingEvents()[0] || sortByDate(events)[0];
+  if(!e){
+    nextEvent.innerHTML = `<div class="empty">Ingen aktiviteter oprettet endnu.</div>`;
+    return;
+  }
+
+  nextEvent.innerHTML = `
+    <button class="next-card no-poster-card" onclick="openEvent('${e.id}')" aria-label="Åbn ${e.title}">
+      <div class="event-icon large">${e.icon || '•'}</div>
+      <div class="next-info">
+        <span class="tag">${tag(e.type)}</span>
+        <h3>${e.title}</h3>
+        <div class="match">${e.subtitle || ''}</div>
+        <div class="meta">
+          <div><span>📅</span><span>${daDate(e.date)}</span></div>
+          <div><span>🕘</span><span>${e.timeText || ''}</span></div>
+          <div><span>📍</span><span>${e.place || ''}</span></div>
+        </div>
+        <p class="desc">${e.text || ''}</p>
+        <div class="card-arrow">Tryk for detaljer ›</div>
+      </div>
+    </button>`;
+}
+
+function renderEventList(){
+  const items = shownEvents();
+  eventList.innerHTML = items.length ? items.map(e => `
+    <button class="event-card" onclick="openEvent('${e.id}')">
+      <div class="event-icon">${e.icon || '•'}</div>
+      <div>
+        <h3>${e.title}</h3>
+        <p><strong>${e.subtitle || ''}</strong><br>${daDate(e.date,false)} · ${e.timeText || ''}</p>
+      </div>
+      <div class="chev">›</div>
+    </button>
+  `).join('') : `<div class="empty">Ingen kommende aktiviteter i denne kategori.</div>`;
+
+  const old = pastEvents();
+  pastEventsBlock.hidden = old.length === 0;
+  pastEventList.innerHTML = old.map(e => `
+    <button class="event-card muted-card" onclick="openEvent('${e.id}')">
+      <div class="event-icon">${e.icon || '•'}</div>
+      <div>
+        <h3>${e.title}</h3>
+        <p><strong>${e.subtitle || ''}</strong><br>${daDate(e.date,false)}</p>
+      </div>
+      <div class="chev">›</div>
+    </button>
+  `).join('');
+}
+
+window.openEvent = function(id){
+  const e = byId(id);
+  if(!e) return;
+
+  modalContent.innerHTML = `
+    ${e.poster ? `
+      <div class="detail-poster-wrap">
+        <img class="detail-poster" src="${e.poster}" alt="${e.title} plakat">
+      </div>` : ''}
+    <h2 class="modal-title">${e.icon || ''} ${e.title}</h2>
+    <p class="modal-sub">${e.subtitle || ''}</p>
+    <div class="info-grid">
+      <div class="info-row"><span>📅</span><div>${daDate(e.date)}</div></div>
+      <div class="info-row"><span>🕘</span><div>${e.timeText || ''}</div></div>
+      <div class="info-row"><span>📍</span><div>${e.place || ''}</div></div>
+      <div class="info-row"><span>🔒</span><div>${tag(e.type)}</div></div>
+    </div>
+    <p class="description">${e.text || ''}</p>
+    ${e.start && e.end ? `<div class="modal-actions"><a class="btn primary" href="${googleCalendarUrl(e)}" target="_blank" rel="noopener">Tilføj kalender</a></div>` : ''}
+  `;
+  modal.showModal();
+}
+
+
+function upcomingInitiatives(){ return sortByDate(initiativer).filter(isUpcoming); }
+function pastInitiatives(){ return sortByDate(initiativer).filter(e => !isUpcoming(e)).reverse(); }
+function initiativeById(id){ return initiativer.find(e => e.id === id); }
+
+
+function normalizeKey(value){
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[–—]/g, '-')
+    .replace(/\s+/g, ' ');
+}
+
+function firstValue(row, keys){
+  for(const key of keys){
+    if(row && row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== '') return row[key];
+  }
+  return '';
+}
+
+function escapeHtml(value){
+  return String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
+}
+
+function escapeAttr(value){
+  return escapeHtml(value).replace(/`/g, '&#96;');
+}
+
+
+function arrayRowsToObjects(rows){
+  if(!Array.isArray(rows) || rows.length < 2 || !Array.isArray(rows[0])) return rows || [];
+  const headers = rows[0].map(h => String(h || '').trim());
+  return rows.slice(1).map(row => rowToObject(headers, row));
+}
+
+
+async function postToAppsScript(action, payload){
+  if(!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes('INDSAET_DIN_APPS_SCRIPT')){
+    throw new Error('Apps Script URL mangler i app.js');
+  }
+
+  // Apps Script-koden i det nye Sheet bruger doGet, så skrivning skal sendes som query params.
+  // Det undgår samtidig CORS/problemer med POST fra GitHub Pages.
+  const url = new URL(APPS_SCRIPT_URL);
+  url.searchParams.set('action', action);
+  Object.entries(payload || {}).forEach(([key, value]) => {
+    url.searchParams.set(key, value == null ? '' : String(value));
+  });
+  url.searchParams.set('_', Date.now());
+
+  const res = await fetch(url.toString(), {
+    method: 'GET',
+    cache: 'no-store'
+  });
+
+  if(!res.ok) throw new Error('Apps Script HTTP ' + res.status);
+
+  const data = await res.json();
+  if(!(data.ok || data.success)){
+    throw new Error(data.error || 'Apps Script returnerede fejl');
+  }
+
+  window.__appsScriptCache = {};
+  invalidateIdebankCache();
+  return data;
+}
+
+function openJoinDialog(initiative){
+  if(!joinModal) return;
+  joinActivityId.value = initiative.id || '';
+  joinActivityName.value = initiative.title || '';
+  joinActivityTitle.textContent = `Du tilmelder dig: ${initiative.title}`;
+  joinStatus.textContent = '';
+  joinForm.reset();
+  joinActivityId.value = initiative.id || '';
+  joinActivityName.value = initiative.title || '';
+  joinModal.showModal();
+}
+
+
+async function refreshParticipants(){
+  try{
+    participants = await loadParticipantsFromSheet(true);
+    renderInitiatives();
+    return true;
+  }catch(err){
+    console.warn('Kunne ikke opdatere deltagerlisten fra Google Sheets:', err);
+    return false;
+  }
+}
+
+function participantsFor(initiative){
+  const possible = [
+    initiative.id,
+    initiative.title,
+    initiative.title + ' - ' + (initiative.date || ''),
+    initiative.title + ' – ' + (initiative.date || '')
+  ].map(normalizeKey).filter(Boolean);
+
+  const names = participants
+    .filter(p => possible.includes(normalizeKey(p.activityId)) || possible.includes(normalizeKey(p.activity)))
+    .map(p => p.name)
+    .filter(Boolean);
+
+  return [...new Set(names)];
+}
+
+function renderInitiatives(){
+  if(!initiativeList) return;
+  if(initiativesLoading){
+    initiativeList.innerHTML = `<div class="empty initiative-loading"><span class="mini-spinner" aria-hidden="true"></span> Henter planlagte aktiviteter...</div>`;
+    if(pastInitiativeBlock) pastInitiativeBlock.hidden = true;
+    return;
+  }
+  const items = upcomingInitiatives();
+  initiativeList.innerHTML = items.length ? items.map(e => {
+    const names = participantsFor(e);
+    return `
+    <button class="event-card" onclick="openInitiative('${e.id}')">
+      <div class="event-icon">${e.icon || '🤝'}</div>
+      <div><h3>${e.title}</h3><p><strong>${e.host || ''}</strong><br>${daDate(e.date,false)}${e.time ? ' · kl. ' + e.time : ''}<br><span class="participant-count">👥 ${names.length} deltager${names.length === 1 ? '' : 'e'}</span></p></div>
+      <div class="chev">›</div>
+    </button>`}).join('') : `<div class="empty">Der er ingen planlagte aktiviteter fra brødrene lige nu.</div>`;
+
+  const old = pastInitiatives();
+  if(pastInitiativeBlock && pastInitiativeList){
+    pastInitiativeBlock.hidden = old.length === 0;
+    pastInitiativeList.innerHTML = old.map(e => {
+      const names = participantsFor(e);
+      return `
+      <button class="event-card muted-card" onclick="openInitiative('${e.id}')">
+        <div class="event-icon">${e.icon || '🤝'}</div>
+        <div><h3>${e.title}</h3><p><strong>${e.host || ''}</strong><br>${daDate(e.date,false)}<br><span class="participant-count">👥 ${names.length} deltager${names.length === 1 ? '' : 'e'}</span></p></div>
+        <div class="chev">›</div>
+      </button>`}).join('');
+  }
+}
+
+
+function initiativeCalendarUrl(item){
+  if(!item || !item.date) return '#';
+  const startTime = item.time || '19:00';
+  const endTime = addMinutes(startTime, 90);
+  const start = item.date.replaceAll('-','') + 'T' + startTime.replace(':','') + '00';
+  const end = item.date.replaceAll('-','') + 'T' + endTime.replace(':','') + '00';
+  const text = encodeURIComponent(item.title || 'Broderinitiativ');
+  const details = encodeURIComponent(`${item.text || ''}\n\nKontaktperson: ${item.host || ''}`.trim());
+  const location = encodeURIComponent(item.place || '');
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${start}/${end}&details=${details}&location=${location}`;
+}
+
+window.openInitiative = function(id){
+  const e = initiativeById(id); if(!e) return;
+  const names = participantsFor(e);
+  const participantList = names.length
+    ? `<div class="participants-box"><h3>Deltagere (${names.length})</h3><ul>${names.map(n => `<li>✓ ${n}</li>`).join('')}</ul></div>`
+    : `<div class="participants-box"><h3>Deltagere</h3><p>Ingen har skrevet sig på endnu.</p></div>`;
+
+  modalContent.innerHTML = `
+    <div class="loge-detail-icon">${e.icon || '🤝'}</div>
+    <h2 class="modal-title">${e.title}</h2>
+    <p class="modal-sub">Foreslået af ${e.host || 'en broder'}</p>
+    <div class="info-grid">
+      <div class="info-row"><span>📅</span><div>${daDate(e.date)}</div></div>
+      <div class="info-row"><span>🕘</span><div>${e.time ? 'Kl. ' + e.time : 'Tidspunkt ikke angivet'}</div></div>
+      <div class="info-row"><span>📍</span><div>${e.place || 'Sted ikke angivet'}</div></div>
+    </div>
+    <p class="description">${e.text || ''}</p>
+    ${participantList}
+    <div class="modal-actions">
+      <button class="btn primary" type="button" onclick="openJoinForInitiative(\'${e.id}\')">Tilmeld mig aktiviteten</button>
+      <a class="btn soft" href="${initiativeCalendarUrl(e)}" target="_blank" rel="noopener">Tilføj kalender</a>
+    </div>
+    <p class="sheet-status-note">Skriv dit navn og tryk på tilmeldingsknappen. Dit navn vises derefter på deltagerlisten.</p>`;
+  modal.showModal();
+}
+
+
+function rowToObject(headers, row){
+  const obj = {};
+  headers.forEach((header, index) => {
+    obj[String(header || '').trim()] = String(row[index] ?? '').trim();
+  });
+  return obj;
+}
+
+window.openJoinForInitiative = function(id){
+  const e = initiativeById(id);
+  if(!e) return;
+  openJoinDialog(e);
+}
+
+
+/* Google Sheets / Apps Script: accepter både danske kolonnenavne og normaliserede felter. */
+function pickArray(data, keys){
+  if(Array.isArray(data)) return data;
+  if(!data || typeof data !== 'object') return [];
+  for(const key of keys){
+    if(Array.isArray(data[key])) return data[key];
+  }
+  for(const value of Object.values(data)){
+    if(Array.isArray(value)) return value;
+  }
+  return [];
+}
+
+const IDEBANK_CACHE_KEY = 'idebank-cache-v1';
+const IDEBANK_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+
+function readIdebankCache(){
+  try{
+    const raw = localStorage.getItem(IDEBANK_CACHE_KEY);
+    if(!raw) return null;
+
+    const cached = JSON.parse(raw);
+    const timestamp = Number(cached?.timestamp || 0);
+    const data = cached?.data;
+
+    if(!timestamp || !data || typeof data !== 'object'){
+      localStorage.removeItem(IDEBANK_CACHE_KEY);
+      return null;
+    }
+
+    const age = Math.max(0, Date.now() - timestamp);
+    return {
+      data,
+      timestamp,
+      age,
+      isFresh: age <= IDEBANK_CACHE_MAX_AGE_MS
+    };
+  }catch(err){
+    console.warn('Kunne ikke læse lokal idébank-cache:', err);
+    try{ localStorage.removeItem(IDEBANK_CACHE_KEY); }catch{}
+    return null;
+  }
+}
+
+function writeIdebankCache(data){
+  try{
+    localStorage.setItem(IDEBANK_CACHE_KEY, JSON.stringify({
+      timestamp: Date.now(),
+      data
+    }));
+  }catch(err){
+    console.warn('Kunne ikke gemme lokal idébank-cache:', err);
+  }
+}
+
+function invalidateIdebankCache(){
+  try{ localStorage.removeItem(IDEBANK_CACHE_KEY); }catch{}
+}
+
+function pickNamedListArray(data, keys, required=false){
+  const matchingKey = keys.find(key => Array.isArray(data?.[key]));
+  if(matchingKey) return pickArray(data, [matchingKey]);
+  if(required) throw new Error(`Apps Script list-svaret mangler: ${keys[0]}`);
+  return [];
+}
+
+function normalizeListResponse(data){
+  if(!data || typeof data !== 'object'){
+    throw new Error('Apps Script returnerede ikke et gyldigt list-svar.');
+  }
+
+  const initiativeRows = arrayRowsToObjects(
+    pickNamedListArray(data, ['initiatives','initiativer','Initiativer'], true)
+  );
+  const participantRows = arrayRowsToObjects(
+    pickNamedListArray(data, ['participants','deltagere','Deltagere'], true)
+  );
+  const ideaRows = arrayRowsToObjects(
+    pickNamedListArray(data, ['ideas','ideer','idéer','Forslag','forslag'], true)
+  );
+  const voteRows = arrayRowsToObjects(
+    pickNamedListArray(data, ['ideaVotes','ideVotes','stemmer','votes'])
+  );
+
+  return {
+    initiatives: normalizeInitiatives(initiativeRows),
+    participants: normalizeParticipants(participantRows),
+    ideas: normalizeIdeas(ideaRows),
+    ideaVotes: normalizeIdeaVotes(voteRows)
+  };
+}
+
+function applyListResponse(data){
+  const normalized = normalizeListResponse(data);
+
+  participants = normalized.participants;
+  ideas = normalized.ideas;
+  ideaVotes = normalized.ideaVotes;
+  initiativer = [...normalized.initiatives, ...plannedIdeasAsInitiatives()];
+
+  initiativesLoadedSuccessfully = true;
+  initiativesLoading = false;
+  ideasLoading = false;
+
+  renderInitiatives();
+  renderIdeaBank();
+}
+
+function clearSheetDataAfterLoadFailure(){
+  initiativer = [];
+  participants = [];
+  ideas = [];
+  ideaVotes = [];
+  initiativesLoadedSuccessfully = false;
+  initiativesLoading = false;
+  ideasLoading = false;
+  renderInitiatives();
+  renderIdeaBank();
+}
+
+async function loadAllSheetData(force=false){
+  const data = await fetchAppsScriptAction('list', force);
+  normalizeListResponse(data); // Afvis et defekt svar, før det gemmes eller vises.
+  return data;
+}
+
+async function fetchAppsScriptAction(action='list', force=false){
+  const cacheKey = action || 'list';
+  if(!window.__appsScriptCache) window.__appsScriptCache = {};
+  if(window.__appsScriptCache[cacheKey] && !force) return window.__appsScriptCache[cacheKey];
+
+  if(!APPS_SCRIPT_URL){
+    throw new Error('Apps Script URL mangler i app.js');
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+
+  try{
+    const url = new URL(APPS_SCRIPT_URL);
+    if(action) url.searchParams.set('action', action);
+
+    const fetchOptions = {
+      method: 'GET',
+      signal: controller.signal
+    };
+
+    // Et eksplicit force-kald skal gå til nettet, men normale læsninger må bruge browserens cache.
+    if(force) fetchOptions.cache = 'reload';
+
+    const res = await fetch(url.toString(), fetchOptions);
+
+    if(!res.ok) throw new Error('Apps Script HTTP ' + res.status);
+    const data = await res.json();
+    if(data && data.ok === false) throw new Error(data.error || 'Apps Script returnerede ok:false');
+    window.__appsScriptCache[cacheKey] = data;
+    return data;
+  }finally{
+    clearTimeout(timeout);
+  }
+}
+
+function normalizeDate(value){
+  const raw = String(value || '').trim();
+  if(!raw) return '';
+
+  let m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T].*)?$/);
+  if(m) return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+
+  m = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:\s+.*)?$/);
+  if(m) return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
+
+  m = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+.*)?$/);
+  if(m) return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
+
+  return '';
+}
+
+function normalizeTime(value){
+  const raw = String(value || '').trim();
+  if(!raw) return '';
+
+  let m = raw.match(/(?:^|\s)(\d{1,2})[.:](\d{1,2})(?:[.:](\d{1,2}))?(?:\s|$)/);
+  if(m) return `${String(m[1]).padStart(2,'0')}:${String(m[2]).padStart(2,'0')}`;
+
+  m = raw.match(/T(\d{1,2}):(\d{1,2})/);
+  if(m) return `${String(m[1]).padStart(2,'0')}:${String(m[2]).padStart(2,'0')}`;
+
+  return raw;
+}
+
+function isApproved(status){
+  const s = String(status || '').trim().toLowerCase();
+  return ['godkendt','ja','approved','true','1','ok'].includes(s);
+}
+
+function makeInitiativeId(row, index){
+  const existing = firstValue(row, ['id','ID','Initiativ ID','Aktivitet ID','activityId']);
+  if(existing) return String(existing).trim();
+  const title = firstValue(row, ['title','Titel','Titel på aktiviteten','Initiativ','Aktivitet']);
+  const date = normalizeDate(firstValue(row, ['date','Dato','Dato for aktiviteten','Hvornår?','Dato/tid']));
+  const time = normalizeTime(firstValue(row, ['time','Tid','Tidspunkt','Tidspunkt for aktivitet','Klokkeslæt']));
+  const base = normalizeKey(`${title}-${date}-${time}`).replace(/[^a-z0-9æøå -]/g, '').replace(/\s+/g, '-');
+  return base || `sheet-${index}`;
+}
+
+function normalizeInitiativeRecord(row, index=0){
+  const status = firstValue(row, ['status','Status','Godkendt','godkendt','Approved']);
+  const date = normalizeDate(firstValue(row, ['date','Dato','Dato for aktiviteten','Hvornår?','Dato/tid']));
+  const title = firstValue(row, ['title','Titel','Titel på aktiviteten','Initiativ','Aktivitet']);
+  const host = firstValue(row, ['host','Kontaktperson','Navn på kontaktperson','Navn','Oprettet af']);
+  return {
+    id: makeInitiativeId(row, index),
+    icon: firstValue(row, ['icon','Ikon']) || '🤝',
+    status,
+    title: title || 'Uden titel',
+    date,
+    time: normalizeTime(firstValue(row, ['time','Tid','Tidspunkt','Tidspunkt for aktivitet','Klokkeslæt'])),
+    place: firstValue(row, ['place','Sted','Lokation']),
+    host,
+    text: firstValue(row, ['text','Beskrivelse','Beskrivelse af aktiviteten','Tekst'])
+  };
+}
+
+function normalizeInitiatives(items){
+  return (Array.isArray(items) ? items : [])
+    .map((row, index) => normalizeInitiativeRecord(row, index))
+    .filter(e => isApproved(e.status))
+    .filter(e => e.title && e.date);
+}
+
+function normalizeParticipantRecord(row){
+  return {
+    activityId: firstValue(row, ['activityId','Aktivitet ID','Aktivitets ID','id']),
+    activity: firstValue(row, ['activity','Aktivitet','Titel','Titel på aktiviteten','Initiativ']),
+    name: firstValue(row, ['name','Navn','Dit navn'])
+  };
+}
+
+function normalizeParticipants(items){
+  return (Array.isArray(items) ? items : [])
+    .map(normalizeParticipantRecord)
+    .filter(p => (p.activityId || p.activity) && p.name);
+}
+
+
+function parseIdeaNames(value){
+  return String(value || '')
+    .split(/[;,\n]/)
+    .map(name => name.trim())
+    .filter(Boolean);
+}
+
+function ideaInterestedCount(item){
+  const numeric = Number(String(item?.interested || '').replace(',', '.'));
+  if(Number.isFinite(numeric) && numeric > 0) return Math.round(numeric);
+  return parseIdeaNames(item?.interestedNames).length;
+}
+
+function isVisibleIdeaStatus(status){
+  const s = String(status || '').trim().toLowerCase();
+  return ['ny','under behandling','afstemning','planlagt','godkendt'].includes(s);
+}
+
+function isPollIdeaStatus(status){
+  const s = String(status || '').trim().toLowerCase();
+  return ['afstemning','poll','interesse','interesseafstemning'].includes(s);
+}
+
+function ideaStatusLabel(status){
+  const s = normalizeKey(status);
+  if(s === 'ny') return 'Forslaget er modtaget';
+  if(s === 'under behandling') return 'Forslaget bliver undersøgt';
+  if(s === 'afstemning') return 'Brødrene kan vise interesse';
+  if(s === 'planlagt') return 'Aktiviteten bliver planlagt';
+  if(s === 'godkendt') return 'Forslaget er godkendt';
+  return status || 'Status ikke angivet';
+}
+
+function makeIdeaId(row, index){
+  const existing = firstValue(row, ['id','ID','Forslag ID','Idea ID','ideaId']);
+  if(existing) return String(existing).trim();
+  const title = firstValue(row, ['title','Titel','Forslag','Ide','Idé']);
+  const created = firstValue(row, ['createdAt','Dato','Indsendt','Timestamp','Tidspunkt']);
+  const base = normalizeKey(`${title}-${created}`).replace(/[^a-z0-9æøå -]/g, '').replace(/\s+/g, '-');
+  return base || `idea-${index}`;
+}
+
+function normalizeIdeaRecord(row, index=0){
+  const status = firstValue(row, ['status','Status']) || 'Ny';
+  return {
+    id: makeIdeaId(row, index),
+    status,
+    title: firstValue(row, ['title','Titel','Forslag','Ide','Idé']) || 'Uden titel',
+    text: firstValue(row, ['text','Beskrivelse','Beskrivelse af forslag','Tekst']),
+    category: firstValue(row, ['category','Kategori','Type']) || 'Andet',
+    name: firstValue(row, ['name','Navn','Forslagsstiller','Oprettet af']),
+    help: firstValue(row, ['help','Vil hjælpe','Hjælper','Kan hjælpe']) || 'Nej',
+    estimate: firstValue(row, ['estimate','Forventede deltagere','Deltagerestimat']),
+    interested: firstValue(row, ['interested','Interesserede','Antal interesserede','Stemmer']),
+    interestedNames: firstValue(row, ['interestedNames','Interesserede navne','Navne','Interessenavne']),
+    date: normalizeDate(firstValue(row, ['date','Dato for arrangement','Dato','Planlagt dato'])),
+    time: normalizeTime(firstValue(row, ['time','Tid','Tidspunkt','Planlagt tid'])),
+    place: firstValue(row, ['place','Sted','Lokation']),
+    contact: firstValue(row, ['contact','Kontaktperson','Ansvarlig']),
+    note: firstValue(row, ['note','Bemærkning','Statusnote','Status note'])
+  };
+}
+
+function normalizeIdeas(items){
+  return (Array.isArray(items) ? items : [])
+    .map((row, index) => normalizeIdeaRecord(row, index))
+    .filter(item => item.title)
+    .filter(item => isVisibleIdeaStatus(item.status));
+}
+
+function normalizeIdeaVoteRecord(row){
+  return {
+    ideaId: firstValue(row, ['ideaId','Forslag ID','ID','id']),
+    idea: firstValue(row, ['idea','Forslag','Titel','Idé','Ide']),
+    name: firstValue(row, ['name','Navn','Dit navn']),
+    vote: firstValue(row, ['vote','Svar','Interesse','Stemme']) || 'Ja'
+  };
+}
+
+function normalizeIdeaVotes(items){
+  return (Array.isArray(items) ? items : [])
+    .map(normalizeIdeaVoteRecord)
+    .filter(v => (v.ideaId || v.idea) && v.name);
+}
+
+function votesForIdea(idea){
+  if(!idea) return [];
+  const names = parseIdeaNames(idea.interestedNames);
+  return names.map(name => ({ ideaId: idea.id, idea: idea.title, name, vote: 'Ja' }));
+}
+
+function interestedVotesForIdea(idea){
+  return votesForIdea(idea);
+}
+
+function plannedIdeasAsInitiatives(){
+  return ideas
+    .filter(item => normalizeKey(item.status) === 'planlagt' && item.date)
+    .map(item => ({
+      id: `idea-${item.id}`,
+      icon: '💡',
+      status: 'Godkendt',
+      title: item.title,
+      date: item.date,
+      time: item.time,
+      place: item.place || 'Odd Fellow Bygningen',
+      host: item.contact || item.name || 'Logen',
+      text: item.text || item.note || '',
+      fromIdeaBank: true
+    }));
+}
+
+function renderIdeaBank(){
+  if(!ideaPollList || !ideaPipelineList) return;
+  if(ideasLoading){
+    ideaPollList.innerHTML = `<div class="empty"><span class="mini-spinner" aria-hidden="true"></span> Henter forslag...</div>`;
+    ideaPipelineList.innerHTML = '';
+    return;
+  }
+  const polls = ideas.filter(item => isPollIdeaStatus(item.status));
+  ideaPollList.innerHTML = polls.length ? polls.map(item => {
+    const count = ideaInterestedCount(item);
+    return `<article class="idea-card poll-card">
+      <div class="idea-card-head"><span class="idea-icon">🗳</span><div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.category)} · ${count} ${count === 1 ? 'broder har' : 'brødre har'} vist interesse</p></div></div>
+      <p>${escapeHtml(item.text || 'Kunne dette være noget for dig?')}</p>
+      <button class="btn primary wide-btn" type="button" onclick="openIdeaVote('${escapeAttr(item.id)}')">Jeg er interesseret</button>
+    </article>`;
+  }).join('') : `<div class="empty">Der er ingen forslag, du kan vise interesse for lige nu.</div>`;
+
+  const pipeline = ideas.filter(item => !isPollIdeaStatus(item.status));
+  ideaPipelineList.innerHTML = pipeline.length ? pipeline.map(item => {
+    const count = ideaInterestedCount(item);
+    const statusClass = normalizeKey(item.status).replace(/[^a-z0-9æøå-]/g, '');
+    return `<article class="idea-card pipeline-card">
+      <div class="idea-card-head"><span class="idea-icon">💡</span><div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.category)}${count ? ` · ${count} ${count === 1 ? 'broder har' : 'brødre har'} vist interesse` : ''}</p></div></div>
+      <p>${escapeHtml(item.text || '')}</p>
+      <div class="idea-meta-row"><span class="status-pill ${escapeAttr(statusClass)}">${escapeHtml(ideaStatusLabel(item.status))}</span>${item.help ? `<span>Vil hjælpe med at arrangere: ${escapeHtml(item.help)}</span>` : ''}</div>
+      ${item.note ? `<p class="idea-note">${escapeHtml(item.note)}</p>` : ''}
+    </article>`;
+  }).join('') : `<div class="empty">Der er ingen forslag, som bliver undersøgt lige nu.</div>`;
+}
+
+async function loadIdeasFromSheet(force=false){
+  let data;
+  try{
+    data = await fetchAppsScriptAction('getIdeas', force);
+  }catch(err){
+    data = await fetchAppsScriptAction('list', true);
+  }
+  const rows = arrayRowsToObjects(pickArray(data, ['ideas','ideer','idéer','Forslag','forslag','items','data','rows']));
+  return normalizeIdeas(rows);
+}
+
+async function loadIdeaVotesFromSheet(force=false){
+  // V2.1 bruger ét ark til idébanken. Interesserede læses direkte fra kolonnerne
+  // "Interesserede" og "Interesserede navne" i Idebank-arket. Ingen ekstra ark.
+  return [];
+}
+
+async function loadInitiativesFromSheet(force=false){
+  // Prøv specifik action først. Hvis Apps Script ikke har den, læses den samlede list.
+  let data;
+  try{
+    data = await fetchAppsScriptAction('getInitiatives', force);
+  }catch(err){
+    data = await fetchAppsScriptAction('list', true);
+  }
+  const rows = arrayRowsToObjects(pickArray(data, ['initiatives','initiativer','Initiativer','items','data','rows']));
+  return normalizeInitiatives(rows);
+}
+
+async function loadParticipantsFromSheet(force=false){
+  let data;
+  try{
+    data = await fetchAppsScriptAction('getParticipants', force);
+  }catch(err){
+    data = await fetchAppsScriptAction('list', true);
+  }
+  const rows = arrayRowsToObjects(pickArray(data, ['participants','deltagere','Deltagere','items','data','rows']));
+  return normalizeParticipants(rows);
+}
+
+
+function renderAll(){
+  renderEventHero();
+  renderEventList();
+  renderInitiatives();
+  renderIdeaBank();
+}
+
+const SEEN_EVENTS_KEY = 'concordia-seen-event-ids-v1';
+const SEEN_INITIATIVES_KEY = 'concordia-seen-initiative-ids-v1';
+let pendingNewItems = [];
+let initiativesLoadedSuccessfully = false;
+
+function getDeepLinkedEventId(){
+  return new URLSearchParams(window.location.search).get('event');
+}
+
+function getDeepLinkedInitiativeId(){
+  return new URLSearchParams(window.location.search).get('initiative');
+}
+
+function getDeepLinkedSignupId(){
+  return new URLSearchParams(window.location.search).get('tilmelding');
+}
+
+function getDeepLinkedGalleryName(){
+  return new URLSearchParams(window.location.search).get('gallery');
+}
+
+function readSeenIds(key){
+  try{
+    const stored = localStorage.getItem(key);
+    if(!stored) return null;
+    const parsed = JSON.parse(stored);
+    return new Set(Array.isArray(parsed) ? parsed : []);
+  }catch{
+    return null;
+  }
+}
+
+function rememberCurrentContent(){
+  try{
+    localStorage.setItem(SEEN_EVENTS_KEY, JSON.stringify(events.map(event => event.id).filter(Boolean)));
+    if(initiativesLoadedSuccessfully){
+      localStorage.setItem(SEEN_INITIATIVES_KEY, JSON.stringify(initiativer.map(item => item.id).filter(Boolean)));
+    }
+  }catch{}
+}
+
+function newContentSinceLastVisit(){
+  const seenEvents = readSeenIds(SEEN_EVENTS_KEY);
+  const seenInitiatives = initiativesLoadedSuccessfully ? readSeenIds(SEEN_INITIATIVES_KEY) : new Set();
+
+  // Hver indholdstype initialiseres separat, så gamle opslag ikke udløser en mur af beskeder.
+  const newEvents = seenEvents === null
+    ? []
+    : events
+      .filter(event => event.id && !seenEvents.has(event.id))
+      .map(event => ({ type: 'event', id: event.id, item: event }));
+
+  const newInitiatives = !initiativesLoadedSuccessfully || seenInitiatives === null
+    ? []
+    : initiativer
+      .filter(item => item.id && !seenInitiatives.has(item.id))
+      .map(item => ({ type: 'initiative', id: item.id, item }));
+
+  return [...newEvents, ...newInitiatives];
+}
+
+function showNewContentPopup(){
+  if(!newActivityModal || getDeepLinkedEventId() || getDeepLinkedInitiativeId() || getDeepLinkedSignupId() || getDeepLinkedGalleryName()){
+    rememberCurrentContent();
+    return;
+  }
+
+  const newItems = newContentSinceLastVisit();
+  if(!newItems.length){
+    rememberCurrentContent();
+    return;
+  }
+
+  pendingNewItems = newItems;
+  const newEvents = newItems.filter(entry => entry.type === 'event');
+  const newInitiatives = newItems.filter(entry => entry.type === 'initiative');
+  const first = newItems[0];
+
+  if(newItems.length === 1 && first.type === 'event'){
+    const item = first.item;
+    newActivityTitle.textContent = 'Ny aktivitet';
+    newActivityText.textContent = `${item.title}${item.subtitle ? ' – ' + item.subtitle : ''} er lagt i appen.`;
+    newActivityOpenBtn.textContent = 'Se aktiviteten';
+  }else if(newItems.length === 1){
+    const item = first.item;
+    newActivityTitle.textContent = 'Ny aktivitet fra en broder';
+    newActivityText.textContent = `${item.title} er blevet godkendt og har nu fået en dato.`;
+    newActivityOpenBtn.textContent = 'Se aktiviteten';
+  }else if(newEvents.length && newInitiatives.length){
+    newActivityTitle.textContent = `${newItems.length} nye opslag`;
+    newActivityText.textContent = `Der er ${newEvents.length} ${newEvents.length === 1 ? 'ny aktivitet' : 'nye aktiviteter'} og ${newInitiatives.length} ${newInitiatives.length === 1 ? 'ny aktivitet fra en broder' : 'nye aktiviteter fra brødrene'} siden sidst.`;
+    newActivityOpenBtn.textContent = 'Se det første';
+  }else if(newInitiatives.length){
+    newActivityTitle.textContent = `${newInitiatives.length} nye aktiviteter fra brødrene`;
+    newActivityText.textContent = 'Der er kommet nye godkendte aktiviteter med dato siden dit sidste besøg.';
+    newActivityOpenBtn.textContent = 'Se initiativerne';
+  }else{
+    newActivityTitle.textContent = `${newEvents.length} nye aktiviteter`;
+    newActivityText.textContent = 'Der er lagt nye aktiviteter i appen siden sidst.';
+    newActivityOpenBtn.textContent = 'Se aktiviteterne';
+  }
+
+  newActivityModal.showModal();
+}
+
+function closeNewActivityPopup(){
+  rememberCurrentContent();
+  if(newActivityModal?.open) newActivityModal.close();
+}
+
+function activateView(viewName){
+  const button = document.querySelector(`.nav-btn[data-view="${viewName}"]`);
+  if(button) button.click();
+}
+
+if(newActivityCloseBtn) newActivityCloseBtn.addEventListener('click', closeNewActivityPopup);
+if(newActivityModal) newActivityModal.addEventListener('cancel', event => {
+  event.preventDefault();
+  closeNewActivityPopup();
+});
+if(newActivityOpenBtn) newActivityOpenBtn.addEventListener('click', () => {
+  const items = [...pendingNewItems];
+  closeNewActivityPopup();
+  if(!items.length) return;
+
+  const first = items[0];
+  if(items.length === 1){
+    if(first.type === 'initiative') window.openInitiative(first.id);
+    else window.openEvent(first.id);
+    return;
+  }
+
+  if(items.every(entry => entry.type === 'initiative')){
+    activateView('initiatives');
+  }else if(items.every(entry => entry.type === 'event')){
+    activateView('overview');
+  }else if(first.type === 'initiative'){
+    window.openInitiative(first.id);
+  }else{
+    window.openEvent(first.id);
+  }
+});
+
+function openDeepLinkedContent(){
+  const signupId = getDeepLinkedSignupId();
+  if(signupId){
+    activateView('loge');
+    SignupApp.openDeepLinkedEvent(signupId);
+    return true;
+  }
+
+  const galleryName = getDeepLinkedGalleryName();
+  if(galleryName){
+    activateView('gallery');
+    return true;
+  }
+
+  const eventId = getDeepLinkedEventId();
+  if(eventId && byId(eventId)){
+    window.openEvent(eventId);
+    return true;
+  }
+
+  const initiativeId = getDeepLinkedInitiativeId();
+  if(initiativeId && initiativeById(initiativeId)){
+    activateView('initiatives');
+    window.openInitiative(initiativeId);
+    return true;
+  }
+
+  return false;
+}
+
+async function loadJson(path){
+  const res = await fetch(`${path}?v=${encodeURIComponent(APP_VERSION)}`, { cache: 'no-store' });
+  if(!res.ok) throw new Error(path);
+  return await res.json();
+}
+
+function hideLoadingScreen(delay=0){
+  if(!loadingScreen) return;
+  setTimeout(() => loadingScreen.classList.add('hidden'), delay);
+}
+
+async function init(){
+  if(loadingScreen) loadingScreen.classList.remove('hidden');
+
+  try{
+    events = await loadJson('events.json');
+    if(!Array.isArray(events)) events = [];
+  }catch(err){
+    console.error('Kunne ikke indlæse events.json:', err);
+    events = [];
+    if(nextEvent) nextEvent.innerHTML = `<div class="empty">Kunne ikke indlæse events.json.</div>`;
+  }
+
+  renderAll();
+  SignupApp.init();
+  GalleryApp.init({ load: false });
+
+  let cached = readIdebankCache();
+  let hasUsableData = false;
+  let deepLinkHandled = false;
+
+  if(cached?.isFresh){
+    try{
+      applyListResponse(cached.data);
+      hasUsableData = true;
+      hideLoadingScreen(50);
+      deepLinkHandled = openDeepLinkedContent();
+    }catch(err){
+      console.warn('Den lokale idébank-cache var ugyldig og blev fjernet:', err);
+      invalidateIdebankCache();
+      cached = null;
+    }
+  }
+
+  try{
+    const freshData = await loadAllSheetData(true);
+    applyListResponse(freshData);
+    writeIdebankCache(freshData);
+    hasUsableData = true;
+  }catch(err){
+    console.warn('Kunne ikke indlæse initiativdata:', err);
+
+    // Ved netværksfejl bruges også en udløbet cache frem for at tømme appen.
+    if(!hasUsableData && cached){
+      try{
+        applyListResponse(cached.data);
+        hasUsableData = true;
+      }catch(cacheErr){
+        console.warn('Den udløbne idébank-cache kunne heller ikke bruges:', cacheErr);
+        invalidateIdebankCache();
+      }
+    }
+
+    if(!hasUsableData) clearSheetDataAfterLoadFailure();
+  }
+
+  hideLoadingScreen(hasUsableData ? 50 : 250);
+
+  // Hent galleriet diskret efter resten af appen, så det oftest er klart,
+  // inden brugeren åbner fanen. En lokal cache gør efterfølgende åbninger straks-klare.
+  setTimeout(() => GalleryApp.loadGallery(), 900);
+
+  setTimeout(() => {
+    if(deepLinkHandled){
+      rememberCurrentContent();
+      return;
+    }
+
+    if(!openDeepLinkedContent()) showNewContentPopup();
+    else rememberCurrentContent();
+  }, 350);
+}
+
+if(filterSelect) filterSelect.addEventListener('change', e => {
+  currentFilter = e.target.value;
+  renderEventList();
+});
+
+$('[data-close]').addEventListener('click', () => modal.close());
+
+$$('.nav-btn').forEach(btn => btn.addEventListener('click', () => {
+  const v = btn.dataset.view;
+  $$('.nav-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  $$('.view').forEach(view => view.classList.remove('active-view'));
+  const targetView = $('#view' + v[0].toUpperCase() + v.slice(1));
+  if(targetView) targetView.classList.add('active-view');
+  if(v === 'gallery') GalleryApp.init();
+  window.scrollTo({top:0, behavior:'smooth'});
+}));
+
+
+if(ideaBankBtn){
+  ideaBankBtn.addEventListener('click', () => {
+    if(ideaSubmitStatus) ideaSubmitStatus.textContent = '';
+    if(ideaSubmitForm) ideaSubmitForm.reset();
+    ideaSubmitModal.showModal();
+  });
+}
+
+const closeIdeaSubmitBtn = $('[data-close-submit-idea]');
+if(closeIdeaSubmitBtn){
+  closeIdeaSubmitBtn.addEventListener('click', () => ideaSubmitModal.close());
+}
+
+const closeIdeaVoteBtn = $('[data-close-idea-vote]');
+if(closeIdeaVoteBtn){
+  closeIdeaVoteBtn.addEventListener('click', () => ideaVoteModal.close());
+}
+
+window.openIdeaVote = function(id){
+  const idea = ideas.find(item => item.id === id);
+  if(!idea) return;
+  ideaVoteId.value = idea.id;
+  ideaVoteTitle.textContent = `Vil du måske deltage i: ${idea.title}? Dette er ikke en bindende tilmelding.`;
+  ideaVoteStatus.textContent = '';
+  ideaVoteName.value = '';
+  ideaVoteModal.showModal();
+}
+
+if(ideaSubmitForm){
+  ideaSubmitForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    const payload = {
+      title: $('#newIdeaTitle').value.trim(),
+      category: $('#newIdeaCategory').value,
+      estimate: $('#newIdeaEstimate').value.trim(),
+      help: $('#newIdeaHelp').value,
+      name: $('#newIdeaName').value.trim(),
+      text: $('#newIdeaText').value.trim()
+    };
+    submitIdeaButton.disabled = true;
+    ideaSubmitStatus.textContent = 'Sender dit forslag...';
+    try{
+      await postToAppsScript('submitIdea', payload);
+      ideaSubmitStatus.textContent = '✓ Forslaget er modtaget og skal nu godkendes.';
+      window.__appsScriptCache = {};
+      ideaSubmitForm.reset();
+      setTimeout(() => ideaSubmitModal.close(), 1400);
+    }catch(err){
+      ideaSubmitStatus.textContent = 'Forslaget kunne ikke sendes. Kontrollér forbindelsen og prøv igen.';
+      console.error(err);
+    }finally{
+      submitIdeaButton.disabled = false;
+    }
+  });
+}
+
+if(ideaVoteForm){
+  ideaVoteForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    const idea = ideas.find(item => item.id === ideaVoteId.value);
+    const payload = {
+      ideaId: ideaVoteId.value,
+      idea: idea ? idea.title : '',
+      name: ideaVoteName.value.trim(),
+      vote: $('input[name="ideaVoteChoice"]:checked')?.value || 'Ja'
+    };
+    const existing = idea ? parseIdeaNames(idea.interestedNames).map(normalizeKey) : [];
+    if(payload.vote === 'Ja' && existing.includes(normalizeKey(payload.name))){
+      ideaVoteStatus.textContent = 'Dit navn står allerede på listen over interesserede.';
+      return;
+    }
+    ideaVoteSubmitButton.disabled = true;
+    ideaVoteStatus.textContent = 'Gemmer dit svar...';
+    try{
+      await postToAppsScript('voteIdea', payload);
+      ideaVoteStatus.textContent = payload.vote === 'Ja' ? '✓ Dit navn er føjet til listen over interesserede.' : '✓ Dit svar er gemt.';
+      window.__appsScriptCache = {};
+      ideas = await loadIdeasFromSheet(true);
+      ideaVotes = [];
+      renderIdeaBank();
+      setTimeout(() => ideaVoteModal.close(), 900);
+    }catch(err){
+      ideaVoteStatus.textContent = 'Dit svar kunne ikke gemmes. Kontrollér forbindelsen og prøv igen.';
+      console.error(err);
+    }finally{
+      ideaVoteSubmitButton.disabled = false;
+    }
+  });
+}
+
+if(suggestInitiativeBtn){
+  suggestInitiativeBtn.addEventListener('click', () => {
+    if(initiativeSubmitStatus) initiativeSubmitStatus.textContent = '';
+    if(initiativeSubmitForm) initiativeSubmitForm.reset();
+    initiativeSubmitModal.showModal();
+  });
+}
+
+
+const closeSubmitInitiativeBtn = $('[data-close-submit-initiative]');
+if(closeSubmitInitiativeBtn){
+  closeSubmitInitiativeBtn.addEventListener('click', () => initiativeSubmitModal.close());
+}
+const closeJoinBtn = $('[data-close-join]');
+if(closeJoinBtn){
+  closeJoinBtn.addEventListener('click', () => joinModal.close());
+}
+
+if(initiativeSubmitForm){
+  initiativeSubmitForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    const payload = {
+      title: $('#newInitiativeTitle').value.trim(),
+      date: $('#newInitiativeDate').value,
+      time: $('#newInitiativeTime').value,
+      place: $('#newInitiativePlace').value.trim(),
+      host: $('#newInitiativeHost').value.trim(),
+      text: $('#newInitiativeText').value.trim()
+    };
+    submitInitiativeButton.disabled = true;
+    initiativeSubmitStatus.textContent = 'Sender aktiviteten til godkendelse...';
+    try{
+      await postToAppsScript('submitInitiative', payload);
+      initiativeSubmitStatus.textContent = '✓ Aktiviteten er sendt til godkendelse.';
+      window.__appsScriptCache = {};
+      initiativeSubmitForm.reset();
+      setTimeout(() => initiativeSubmitModal.close(), 1200);
+    }catch(err){
+      initiativeSubmitStatus.textContent = 'Aktiviteten kunne ikke sendes. Kontrollér forbindelsen og prøv igen.';
+      console.error(err);
+    }finally{
+      submitInitiativeButton.disabled = false;
+    }
+  });
+}
+
+if(joinForm){
+  joinForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    const payload = {
+      activityId: joinActivityId.value,
+      activity: joinActivityName.value,
+      name: $('#joinName').value.trim()
+    };
+    const initiative = initiativeById(payload.activityId);
+    const existingNames = initiative ? participantsFor(initiative).map(normalizeKey) : [];
+    if(existingNames.includes(normalizeKey(payload.name))){
+      joinStatus.textContent = 'Du er allerede tilmeldt denne aktivitet.';
+      return;
+    }
+    joinSubmitButton.disabled = true;
+    joinStatus.textContent = 'Sender din tilmelding...';
+    try{
+      await postToAppsScript('joinActivity', payload);
+      joinStatus.textContent = '✓ Du er nu tilmeldt aktiviteten.';
+      await new Promise(resolve => setTimeout(resolve, 900));
+      await refreshParticipants();
+      renderInitiatives();
+      setTimeout(() => {
+        joinModal.close();
+        openInitiative(payload.activityId);
+      }, 800);
+    }catch(err){
+      joinStatus.textContent = 'Tilmeldingen kunne ikke gemmes. Kontrollér forbindelsen og prøv igen.';
+      console.error(err);
+    }finally{
+      joinSubmitButton.disabled = false;
+    }
+  });
+}
+
+
+const SignupApp = (() => {
+  const CONFIG = {
+    GOOGLE_APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbw5kZ4Yjgge_sKnxhSjjVLkb8cI-hG0E_qcScyxP7820a7lzfCr42HhZDp3lW2kmNsy/exec'
+  };
+
+  const state = {
+    initialized: false,
+    events: [],
+    members: [],
+    rows: [],
+    signups: {},
+    currentEvent: null,
+    currentChoice: {},
+    pendingDeepLinkId: ''
+  };
+
+  const dateFmt = new Intl.DateTimeFormat('da-DK', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
+
+  const shortMonthFmt = new Intl.DateTimeFormat('da-DK', { month: 'short' });
+
+  const els = {};
+
+  const storage = {
+    get member() {
+      try {
+        return JSON.parse(localStorage.getItem('concordia_member_v3') || 'null');
+      } catch {
+        return null;
+      }
+    },
+    set member(v) {
+      localStorage.setItem('concordia_member_v3', JSON.stringify(v));
+    }
+  };
+
+  function cacheEls() {
+    els.memberSelect = document.getElementById('signupMemberSelect');
+    els.saveMemberBtn = document.getElementById('signupSaveMemberBtn');
+    els.syncStatus = document.getElementById('signupSyncStatus');
+    els.eventsList = document.getElementById('signupEventsList');
+    els.totalEvents = document.getElementById('signupTotalEvents');
+    els.myAttending = document.getElementById('signupMyAttending');
+    els.myMeals = document.getElementById('signupMyMeals');
+
+    els.modal = document.getElementById('signupModal');
+    els.closeModalBtn = document.getElementById('signupCloseModalBtn');
+    els.modalDate = document.getElementById('signupModalDate');
+    els.modalTitle = document.getElementById('signupModalTitle');
+    els.modalDescription = document.getElementById('signupModalDescription');
+    els.modalCalendar = document.getElementById('signupModalCalendar');
+    els.mealBlock = document.getElementById('signupMealBlock');
+    els.guestBlock = document.getElementById('signupGuestBlock');
+    els.guestYes = document.getElementById('signupGuestYes');
+    els.guestDetails = document.getElementById('signupGuestDetails');
+    els.guestName = document.getElementById('signupGuestName');
+    els.guestMeal = document.getElementById('signupGuestMeal');
+    els.noteInput = document.getElementById('signupNoteInput');
+    els.saveSignupBtn = document.getElementById('signupSaveSignupBtn');
+    els.saveStatus = document.getElementById('signupSaveStatus');
+  }
+
+  function init() {
+    if (state.initialized) return;
+    cacheEls();
+    if (!els.memberSelect || !els.eventsList || !els.modal) return;
+    state.initialized = true;
+    bind();
+    refreshFromSheet();
+  }
+
+  function bind() {
+    els.saveMemberBtn?.addEventListener('click', saveMember);
+    els.memberSelect?.addEventListener('change', saveMember);
+    els.closeModalBtn?.addEventListener('click', closeModal);
+    els.modal?.addEventListener('click', e => {
+      const rect = els.modal.querySelector('.sheet').getBoundingClientRect();
+      const inDialog = rect.top <= e.clientY && e.clientY <= rect.bottom && rect.left <= e.clientX && e.clientX <= rect.right;
+      if (!inDialog) closeModal();
+    });
+
+    document.querySelectorAll('[data-signup-attending]').forEach(btn => {
+      btn.addEventListener('click', () => chooseAttending(btn.dataset.signupAttending));
+    });
+    document.querySelectorAll('[data-signup-meal]').forEach(btn => {
+      btn.addEventListener('click', () => chooseMeal(btn.dataset.signupMeal));
+    });
+    els.guestYes?.addEventListener('change', syncGuest);
+    els.saveSignupBtn?.addEventListener('click', saveSignup);
+  }
+
+  async function refreshFromSheet() {
+    if (!CONFIG.GOOGLE_APPS_SCRIPT_URL) {
+      state.members = fallbackMembers();
+      state.events = [];
+      els.syncStatus.textContent = 'Tilmeldingen er ikke klar endnu.';
+      renderMembers();
+      render();
+      return;
+    }
+
+    try {
+      els.syncStatus.textContent = 'Henter de nyeste tilmeldinger…';
+      const res = await fetch(`${CONFIG.GOOGLE_APPS_SCRIPT_URL}?action=list&t=${Date.now()}`, { cache: 'no-store' });
+      const data = await res.json();
+      state.members = normalizeMembers(data.members);
+      state.rows = normalizeRows(data.rows || data.signups || []);
+      state.events = getUpcomingEvents(normalizeEvents(data.events || []));
+      mergeCurrentUserRows();
+      els.syncStatus.textContent = 'De nyeste tilmeldinger er hentet.';
+    } catch (err) {
+      console.warn('Kunne ikke hente tilmeldingsdata', err);
+      state.members = fallbackMembers();
+      state.rows = [];
+      state.signups = {};
+      state.events = [];
+      els.syncStatus.textContent = 'Tilmeldingerne kunne ikke hentes. Prøv at genindlæse siden.';
+    }
+
+    renderMembers();
+    render();
+    openPendingDeepLink();
+  }
+
+  function renderMembers() {
+    const current = storage.member;
+    els.memberSelect.innerHTML = '<option value="">Vælg navn</option>' +
+      state.members.map(m => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('');
+    if (current) els.memberSelect.value = current.id;
+  }
+
+  function saveMember() {
+    const id = els.memberSelect.value;
+    const member = state.members.find(m => String(m.id) === String(id));
+    if (!member) return;
+    storage.member = { id: String(member.id), name: member.name };
+    state.signups = {};
+    mergeCurrentUserRows();
+    render();
+    openPendingDeepLink();
+  }
+
+  function mergeCurrentUserRows() {
+    const member = storage.member;
+    state.signups = {};
+    if (!member || !state.rows.length) return;
+    const latest = getLatestRows(state.rows);
+    Object.values(latest).forEach(row => {
+      if (String(row.memberId) === String(member.id)) state.signups[row.eventId] = normalizeRow(row);
+    });
+  }
+
+  function render() {
+    const member = storage.member;
+    els.totalEvents.textContent = state.events.length;
+    els.myAttending.textContent = Object.values(state.signups).filter(s => s.attending === 'yes' && hasUpcomingEvent(s.eventId)).length;
+    els.myMeals.textContent = Object.values(state.signups).filter(s => s.attending === 'yes' && s.meal === 'yes' && hasUpcomingEvent(s.eventId)).length;
+
+    if (!state.events.length) {
+      els.eventsList.innerHTML = '<div class="empty">Der er ingen kommende aftener.</div>';
+    } else {
+      els.eventsList.innerHTML = state.events.map(event => {
+        const signup = state.signups[event.id];
+        const status = getStatus(signup, event);
+        const summary = getSummary(event.id);
+        const d = new Date(`${event.date}T12:00:00`);
+        const locked = isDeadlinePassed(event);
+        const deadlineLabel = getDeadlineLabel(event);
+
+        return `
+          <button class="signup-event-card ${locked ? 'locked' : ''}" type="button" data-event-id="${esc(event.id)}">
+            <div class="signup-date-badge">
+              <span class="day">${d.getDate()}</span>
+              <span class="month">${shortMonthFmt.format(d).replace('.', '')}</span>
+            </div>
+            <div class="signup-card-body">
+              <h3>${esc(event.title)}</h3>
+              <p class="signup-card-meta">${cap(dateFmt.format(d))} · kl. ${event.time.replace(':', '.')} ${event.category ? `· ${esc(event.category)}` : ''}</p>
+              ${event.description ? `<p class="signup-card-description">${esc(event.description)}</p>` : ''}
+              <p class="signup-card-counts">Deltagere: ${summary.attending} · Spiser: ${summary.meals}${summary.guestMeals ? ` · Gæster spiser: ${summary.guestMeals}` : ''}</p>
+              ${deadlineLabel ? `<p class="signup-deadline-text ${locked ? 'locked' : ''}">${deadlineLabel}</p>` : ''}
+              ${buildCalendarLinks(event)}
+            </div>
+            <span class="signup-status-pill ${status.className}">${status.label}</span>
+          </button>
+        `;
+      }).join('');
+    }
+
+    els.eventsList.querySelectorAll('.signup-event-card').forEach(card => {
+      card.addEventListener('click', () => openModal(card.dataset.eventId));
+    });
+
+    if (!member && CONFIG.GOOGLE_APPS_SCRIPT_URL) {
+      els.syncStatus.textContent = 'Vælg dit navn for at starte.';
+    }
+  }
+
+  function openDeepLinkedEvent(eventId) {
+    const decodedId = decodeURIComponent(String(eventId || '').trim());
+    if (!decodedId) return false;
+    state.pendingDeepLinkId = normalizeDate(decodedId);
+    activateView('loge');
+    return openPendingDeepLink();
+  }
+
+  function openPendingDeepLink() {
+    if (!state.pendingDeepLinkId || !state.events.length) return false;
+
+    const event = state.events.find(item =>
+      String(item.id) === String(state.pendingDeepLinkId) ||
+      String(item.date) === String(state.pendingDeepLinkId)
+    );
+
+    if (!event) {
+      state.pendingDeepLinkId = '';
+      return false;
+    }
+
+    activateView('loge');
+
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.delete('tilmelding');
+    window.history.replaceState({}, '', currentUrl);
+
+    window.setTimeout(() => {
+      const card = [...els.eventsList.querySelectorAll('.signup-event-card')]
+        .find(item => String(item.dataset.eventId) === String(event.id));
+      card?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      card?.focus({ preventScroll: true });
+    }, 120);
+
+    if (storage.member) {
+      state.pendingDeepLinkId = '';
+      window.setTimeout(() => openModal(event.id), 180);
+    } else {
+      els.syncStatus.textContent = 'Vælg dit navn for at tilmelde dig denne aften.';
+      window.setTimeout(() => els.memberSelect?.focus(), 180);
+    }
+
+    return true;
+  }
+
+  function openModal(eventId) {
+    const member = storage.member;
+    if (!member) {
+      els.memberSelect.focus();
+      return;
+    }
+    const event = state.events.find(e => e.id === eventId);
+    if (!event) return;
+
+    const existing = state.signups[eventId] || {};
+    const locked = isDeadlinePassed(event);
+    state.currentEvent = event;
+    state.currentChoice = {
+      attending: existing.attending || null,
+      meal: existing.meal || null,
+      guest: existing.guest === 'yes',
+      guestName: existing.guestName || '',
+      guestMeal: existing.guestMeal === 'yes',
+      note: existing.note || '',
+      locked
+    };
+
+    const d = new Date(`${event.date}T12:00:00`);
+    els.modalDate.textContent = `${cap(dateFmt.format(d))} · kl. ${event.time.replace(':', '.')}`;
+    els.modalTitle.textContent = event.title;
+    els.modalDescription.textContent = locked
+      ? 'Tilmeldingsfristen er overskredet. Du kan se din nuværende status, men ændringer skal gå via restauratøren.'
+      : (event.description || 'Vælg din tilmelding.');
+    els.modalCalendar.innerHTML = buildCalendarLinks(event, true);
+    els.guestBlock.hidden = !event.allowGuests;
+    els.noteInput.value = state.currentChoice.note;
+    els.saveStatus.textContent = locked ? 'Fristen er overskredet. Kontakt restauratøren ved ændringer.' : '';
+    syncChoices();
+    setModalDisabled(locked);
+    els.modal.showModal();
+  }
+
+  function closeModal() {
+    els.modal.close();
+    setModalDisabled(false);
+    state.currentEvent = null;
+  }
+
+  function chooseAttending(v) {
+    if (state.currentChoice.locked) return;
+    state.currentChoice.attending = v;
+    if (v === 'no') {
+      state.currentChoice.meal = 'no';
+      state.currentChoice.guest = false;
+      state.currentChoice.guestName = '';
+      state.currentChoice.guestMeal = false;
+    }
+    syncChoices();
+  }
+
+  function chooseMeal(v) {
+    if (state.currentChoice.locked || state.currentChoice.attending !== 'yes') return;
+    state.currentChoice.meal = v;
+    syncChoices();
+  }
+
+  function syncGuest() {
+    if (state.currentChoice.locked) return;
+    state.currentChoice.guest = els.guestYes.checked;
+    if (!state.currentChoice.guest) {
+      state.currentChoice.guestName = '';
+      state.currentChoice.guestMeal = false;
+    }
+    syncChoices();
+  }
+
+  function syncChoices() {
+    document.querySelectorAll('[data-signup-attending]').forEach(btn => btn.classList.toggle('active', btn.dataset.signupAttending === state.currentChoice.attending));
+    document.querySelectorAll('[data-signup-meal]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.signupMeal === state.currentChoice.meal);
+      btn.disabled = state.currentChoice.attending !== 'yes' || state.currentChoice.locked;
+    });
+    els.mealBlock.style.opacity = state.currentChoice.attending === 'yes' ? '1' : '.55';
+    els.guestYes.checked = !!state.currentChoice.guest;
+    els.guestYes.disabled = state.currentChoice.attending !== 'yes' || state.currentChoice.locked;
+    els.guestDetails.hidden = !state.currentChoice.guest || state.currentChoice.attending !== 'yes';
+    els.guestName.value = state.currentChoice.guestName || '';
+    els.guestMeal.checked = !!state.currentChoice.guestMeal;
+  }
+
+  function setModalDisabled(disabled) {
+    document.querySelectorAll('[data-signup-attending]').forEach(btn => btn.disabled = disabled);
+    document.querySelectorAll('[data-signup-meal]').forEach(btn => btn.disabled = disabled || state.currentChoice.attending !== 'yes');
+    els.guestYes.disabled = disabled || state.currentChoice.attending !== 'yes';
+    els.guestName.disabled = disabled;
+    els.guestMeal.disabled = disabled;
+    els.noteInput.disabled = disabled;
+    els.saveSignupBtn.disabled = disabled;
+    els.saveSignupBtn.textContent = disabled ? 'Frist overskredet' : 'Gem';
+  }
+
+  async function saveSignup() {
+    const member = storage.member;
+    if (!member || !state.currentEvent) return;
+    if (isDeadlinePassed(state.currentEvent)) {
+      els.saveStatus.textContent = 'Tilmeldingsfristen er overskredet. Kontakt restauratøren ved ændringer.';
+      setModalDisabled(true);
+      return;
+    }
+    if (!state.currentChoice.attending) {
+      els.saveStatus.textContent = 'Vælg om du deltager eller ej.';
+      return;
+    }
+    if (state.currentChoice.attending === 'yes' && !state.currentChoice.meal) {
+      els.saveStatus.textContent = 'Vælg om du spiser med eller ej.';
+      return;
+    }
+
+    const signup = {
+      memberId: member.id,
+      name: member.name,
+      navn: member.name,
+      eventId: state.currentEvent.id,
+      eventDate: state.currentEvent.date,
+      eventTime: state.currentEvent.time,
+      eventTitle: state.currentEvent.title,
+      attending: state.currentChoice.attending,
+      deltager: state.currentChoice.attending,
+      meal: state.currentChoice.attending === 'yes' ? state.currentChoice.meal : 'no',
+      mad: state.currentChoice.attending === 'yes' ? state.currentChoice.meal : 'no',
+      guest: state.currentChoice.attending === 'yes' && els.guestYes.checked ? 'yes' : 'no',
+      guestName: state.currentChoice.attending === 'yes' && els.guestYes.checked ? els.guestName.value.trim() : '',
+      guestFood: state.currentChoice.attending === 'yes' && els.guestYes.checked && els.guestMeal.checked ? 'yes' : 'no',
+      guestMeal: state.currentChoice.attending === 'yes' && els.guestYes.checked && els.guestMeal.checked ? 'yes' : 'no',
+      note: els.noteInput.value.trim(),
+      updatedAt: new Date().toISOString()
+    };
+
+    try {
+      els.saveStatus.textContent = 'Gemmer…';
+      els.saveSignupBtn.disabled = true;
+      const res = await fetch(CONFIG.GOOGLE_APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(signup)
+      });
+      const data = await res.json();
+      if (!(data.ok || data.success)) throw new Error(data.error || 'Ukendt fejl');
+      els.saveStatus.textContent = 'Din tilmelding er gemt.';
+      await refreshFromSheet();
+      setTimeout(() => closeModal(), 650);
+    } catch (err) {
+      console.warn('Kunne ikke gemme tilmelding', err);
+      els.saveSignupBtn.disabled = false;
+      els.saveStatus.textContent = 'Din tilmelding kunne ikke gemmes. Prøv igen.';
+    }
+  }
+
+  function getSummary(eventId) {
+    const latest = getLatestRows(state.rows);
+    const rows = Object.values(latest).filter(r => r.eventId === eventId && r.attending === 'yes');
+    return {
+      attending: rows.length,
+      meals: rows.filter(r => r.meal === 'yes').length,
+      guestMeals: rows.filter(r => r.guestMeal === 'yes').length
+    };
+  }
+
+  function getLatestRows(rows) {
+    const latest = {};
+    rows.forEach(r => {
+      if (!r || !r.eventId) return;
+      const key = `${r.eventId}__${r.memberId || norm(r.name)}`;
+      if (!latest[key] || new Date(r.updatedAt || 0) >= new Date(latest[key].updatedAt || 0)) latest[key] = r;
+    });
+    return latest;
+  }
+
+  function normalizeMembers(input) {
+    if (!Array.isArray(input) || !input.length) return fallbackMembers();
+    if (Array.isArray(input[0])) {
+      const header = input[0].map(h => String(h).trim().toLowerCase());
+      const idIndex = header.indexOf('id');
+      const nameIndex = header.indexOf('navn') !== -1 ? header.indexOf('navn') : header.indexOf('name');
+      return input.slice(1).filter(r => r[idIndex] && r[nameIndex]).map(r => ({ id: String(r[idIndex]).trim(), name: String(r[nameIndex]).trim() }));
+    }
+    return input.filter(m => m.id && (m.name || m.navn)).map(m => ({ id: String(m.id).trim(), name: String(m.name || m.navn).trim() }));
+  }
+
+  function normalizeEvents(input) {
+    if (!Array.isArray(input) || !input.length) return [];
+    if (Array.isArray(input[0])) {
+      const header = input[0].map(h => normalizeKey(h));
+      const getIndex = names => header.findIndex(h => names.map(normalizeKey).includes(h));
+      const idIndex = getIndex(['id', 'eventId']);
+      const dateIndex = getIndex(['dato', 'date']);
+      const timeIndex = getIndex(['tid', 'time']);
+      const titleIndex = getIndex(['titel', 'title']);
+      const descIndex = getIndex(['beskrivelse', 'description']);
+      const categoryIndex = getIndex(['kategori', 'category', 'type']);
+      const guestsIndex = getIndex(['allowGuests', 'gæster tilladt', 'gaester tilladt']);
+      const deadlineIndex = getIndex(['deadline', 'frist', 'tilmeldingsfrist']);
+      return input.slice(1).map(r => normalizeEvent({
+        id: idIndex === -1 ? '' : r[idIndex],
+        date: dateIndex === -1 ? '' : r[dateIndex],
+        time: timeIndex === -1 ? '' : r[timeIndex],
+        title: titleIndex === -1 ? '' : r[titleIndex],
+        description: descIndex === -1 ? '' : r[descIndex],
+        category: categoryIndex === -1 ? '' : r[categoryIndex],
+        allowGuests: guestsIndex === -1 ? false : r[guestsIndex],
+        deadline: deadlineIndex === -1 ? '' : r[deadlineIndex]
+      })).filter(e => e.id && e.date);
+    }
+    return input.map(normalizeEvent).filter(e => e.id && e.date);
+  }
+
+  function normalizeEvent(e) {
+    const date = normalizeDate(e.date || e.dato || e.id || '');
+    const id = normalizeDate(e.id || e.eventId || date);
+    const time = normalizeTime(e.time || e.tid || '19:30');
+    return {
+      id,
+      date,
+      time,
+      title: String(e.title || e.titel || '').trim() || 'Logeaften',
+      category: String(e.category || e.kategori || e.type || '').trim(),
+      description: String(e.description || e.beskrivelse || '').trim(),
+      allowGuests: isYes(e.allowGuests ?? e.gæsterTilladt ?? e.gaesterTilladt),
+      deadline: normalizeDeadline(e.deadline || e.frist || e.tilmeldingsfrist || '', date)
+    };
+  }
+
+  function normalizeRows(input) {
+    if (!Array.isArray(input) || !input.length) return [];
+    if (Array.isArray(input[0])) {
+      const header = input[0].map(h => String(h).trim());
+      return input.slice(1).filter(r => r.length).map(r => {
+        const obj = {};
+        header.forEach((h, i) => obj[h] = r[i]);
+        return normalizeRow(obj);
+      });
+    }
+    return input.map(normalizeRow);
+  }
+
+  function normalizeRow(r) {
+    return {
+      memberId: String(r.memberId || '').trim(),
+      name: String(r.name || r.navn || '').trim(),
+      eventId: normalizeDate(r.eventId || ''),
+      eventDate: normalizeDate(r.eventDate || ''),
+      eventTime: r.eventTime || '',
+      eventTitle: r.eventTitle || '',
+      attending: yn(r.attending || r.deltager),
+      meal: yn(r.meal || r.mad),
+      guest: yn(r.guest),
+      guestName: r.guestName || '',
+      guestMeal: yn(r.guestMeal || r.guestFood),
+      note: r.note || '',
+      updatedAt: r.updatedAt || r.timestamp || new Date().toISOString()
+    };
+  }
+
+  function getStatus(s, event) {
+    const locked = event ? isDeadlinePassed(event) : false;
+    if (!s) return locked ? { label: 'Fristen er udløbet', className: 'status-no' } : { label: 'Ikke tilmeldt endnu', className: 'status-none' };
+    if (s.attending === 'no') return { label: locked ? 'Deltager ikke · frist udløbet' : 'Deltager ikke', className: 'status-no' };
+    if (s.attending === 'yes' && s.meal === 'yes') {
+      return { label: s.guest === 'yes' ? (locked ? 'Tilmeldt med mad og gæst · frist udløbet' : 'Tilmeldt med mad og gæst') : (locked ? 'Tilmeldt med mad · frist udløbet' : 'Tilmeldt med mad'), className: 'status-yes' };
+    }
+    if (s.attending === 'yes') {
+      return { label: s.guest === 'yes' ? (locked ? 'Tilmeldt uden mad, med gæst · frist udløbet' : 'Tilmeldt uden mad, med gæst') : (locked ? 'Tilmeldt uden mad · frist udløbet' : 'Tilmeldt uden mad'), className: 'status-meal-no' };
+    }
+    return { label: 'Ikke tilmeldt endnu', className: 'status-none' };
+  }
+
+  function getUpcomingEvents(events) {
+    return events.filter(e => !isPast(e.date)).sort((a, b) => String(a.date + a.time).localeCompare(String(b.date + b.time)));
+  }
+
+  function hasUpcomingEvent(eventId) {
+    return state.events.some(e => e.id === eventId);
+  }
+
+  function isPast(date) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return new Date(`${normalizeDate(date)}T23:59:59`) < today;
+  }
+
+  function isDeadlinePassed(event) {
+    const deadline = getDeadlineDate(event);
+    if (!deadline) return false;
+    return new Date() > deadline;
+  }
+
+  function getDeadlineDate(event) {
+    if (!event || !event.deadline) return null;
+    const raw = String(event.deadline).trim();
+    if (!raw) return null;
+    let normalized = raw.replace(' ', 'T');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) normalized += 'T23:59:00';
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(normalized)) normalized += ':00';
+    const d = new Date(normalized);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function getDeadlineLabel(event) {
+    const deadline = getDeadlineDate(event);
+    if (!deadline) return '';
+    const date = deadline.toLocaleDateString('da-DK', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const time = deadline.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' }).replace(':', '.');
+    return isDeadlinePassed(event) ? `Tilmeldingsfrist overskredet ${date} kl. ${time}` : `Tilmeld senest ${date} kl. ${time}`;
+  }
+
+  function buildCalendarLinks(event, modal = false) {
+    if (!event || !event.date) return '';
+    const googleUrl = buildGoogleCalendarUrl(event);
+    const icsUrl = buildIcsDataUrl(event);
+    return `
+      <div class="signup-calendar-row" onclick="event.stopPropagation()" aria-label="Føj til kalender">
+        <a class="btn soft signup-calendar-btn" href="${esc(googleUrl)}" target="_blank" rel="noopener" aria-label="Føj til Google Kalender"><span aria-hidden="true">📅</span><span>Google</span></a>
+        <a class="btn soft signup-calendar-btn" href="${esc(icsUrl)}" download="${esc(event.id || 'arrangement')}.ics" aria-label="Føj til Apple Kalender eller Outlook"><span aria-hidden="true">📅</span><span>Apple / Outlook</span></a>
+      </div>
+    `;
+  }
+
+  function buildGoogleCalendarUrl(event) {
+    const start = getEventStart(event);
+    const end = getEventEnd(event);
+    const dates = `${formatGoogleDate(start)}/${formatGoogleDate(end)}`;
+    const appUrl = new URL('./', window.location.href).toString();
+    const details = [event.description || '', `Tilmelding: ${appUrl}`].filter(Boolean).join('\n\n');
+    const params = new URLSearchParams({
+      action: 'TEMPLATE',
+      text: `${event.title || 'Logeaften'} · Concordia 35`,
+      dates,
+      ctz: 'Europe/Copenhagen',
+      details,
+      location: event.location || 'Odd Fellow Logen, Slagelse'
+    });
+    return `https://calendar.google.com/calendar/render?${params.toString()}`;
+  }
+
+  function buildIcsDataUrl(event) {
+    const start = getEventStart(event);
+    const end = getEventEnd(event);
+    const title = `${event.title || 'Logeaften'} · Concordia 35`;
+    const appUrl = new URL('./', window.location.href).toString();
+    const description = [event.description || '', `Tilmelding: ${appUrl}`].filter(Boolean).join('\\n\\n');
+    const uid = `${event.id || Date.now()}@concordia35-tilmelding`;
+    const ics = [
+      'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Concordia35//Tilmelding//DA','CALSCALE:GREGORIAN','METHOD:PUBLISH','BEGIN:VEVENT',
+      `UID:${escapeIcs(uid)}`,
+      `DTSTAMP:${formatIcsUtc(new Date())}`,
+      `DTSTART:${formatIcsUtc(start)}`,
+      `DTEND:${formatIcsUtc(end)}`,
+      `SUMMARY:${escapeIcs(title)}`,
+      `DESCRIPTION:${escapeIcs(description)}`,
+      `LOCATION:${escapeIcs(event.location || 'Odd Fellow Logen, Slagelse')}`,
+      'END:VEVENT','END:VCALENDAR'
+    ].join('\r\n');
+    return `data:text/calendar;charset=utf-8,${encodeURIComponent(ics)}`;
+  }
+
+  function getEventStart(event) {
+    const time = normalizeTime(event.time || '19:30');
+    return new Date(`${event.date}T${time}:00`);
+  }
+
+  function getEventEnd(event) {
+    const start = getEventStart(event);
+    return new Date(start.getTime() + 3 * 60 * 60 * 1000);
+  }
+
+  function formatGoogleDate(date) {
+    const pad = n => String(n).padStart(2, '0');
+    return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}T${pad(date.getHours())}${pad(date.getMinutes())}00`;
+  }
+
+  function formatIcsUtc(date) {
+    const pad = n => String(n).padStart(2, '0');
+    return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}00Z`;
+  }
+
+  function escapeIcs(value) {
+    return String(value || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  }
+
+  function normalizeDate(v) {
+    if (v instanceof Date) return v.toISOString().slice(0, 10);
+    const s = String(v || '').trim();
+    const iso = s.match(/\d{4}-\d{2}-\d{2}/);
+    if (iso) return iso[0];
+    const dk = s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})$/);
+    if (dk) return `${dk[3]}-${String(dk[2]).padStart(2, '0')}-${String(dk[1]).padStart(2, '0')}`;
+    const monthMap = { Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06', Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12' };
+    const textDate = s.match(/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+([A-Z][a-z]{2})\s+(\d{1,2})\s+(\d{4})/);
+    if (textDate) return `${textDate[3]}-${monthMap[textDate[1]]}-${String(textDate[2]).padStart(2, '0')}`;
+    return s;
+  }
+
+  function normalizeDeadline(v, fallbackDate) {
+    if (!v) return '';
+    if (v instanceof Date) {
+      const pad = n => String(n).padStart(2, '0');
+      return `${v.getFullYear()}-${pad(v.getMonth() + 1)}-${pad(v.getDate())}T${pad(v.getHours())}:${pad(v.getMinutes())}`;
+    }
+    const s = String(v || '').trim();
+    if (!s) return '';
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(s)) return s.replace(' ', 'T').slice(0, 16);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return `${s}T23:59`;
+    if (/^\d{1,2}[.\/-]\d{1,2}[.\/-]\d{4}\s+\d{1,2}:\d{2}$/.test(s)) {
+      const [datePart, timePart] = s.split(/\s+/);
+      return `${normalizeDate(datePart)}T${normalizeTime(timePart)}`;
+    }
+    if (/^\d{1,2}:\d{2}$/.test(s) && fallbackDate) return `${fallbackDate}T${normalizeTime(s)}`;
+    return s;
+  }
+
+  function normalizeTime(v) {
+    const s = String(v || '').trim();
+    const m = s.match(/^(\d{1,2})[.:](\d{2})/);
+    if (!m) return s || '19:30';
+    return `${String(m[1]).padStart(2, '0')}:${m[2]}`;
+  }
+
+  function yn(v) {
+    const s = String(v || '').trim().toLowerCase();
+    if (['yes', 'ja', 'true', '1'].includes(s)) return 'yes';
+    if (['no', 'nej', 'false', '0', ''].includes(s)) return 'no';
+    return s;
+  }
+
+  function isYes(v) {
+    const s = String(v || '').trim().toLowerCase();
+    return ['yes', 'ja', 'true', '1', 'x'].includes(s);
+  }
+
+  function normalizeKey(value) {
+    return String(value || '').trim().toLowerCase().replace(/æ/g, 'ae').replace(/ø/g, 'oe').replace(/å/g, 'aa').replace(/[^a-z0-9]/g, '');
+  }
+
+  function esc(v) {
+    return String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+
+  function cap(s) {
+    return s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : '';
+  }
+
+  function norm(s) {
+    return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  function fallbackMembers() {
+    return [
+      { id: '1', name: 'Peter Andersen' },
+      { id: '2', name: 'Lars Møller Andersen' },
+      { id: '3', name: 'Ivar Lind Bendixen' },
+      { id: '4', name: 'Mone Brandstrup' },
+      { id: '5', name: 'Christian Peter Brandstrup' },
+      { id: '6', name: 'Svend Erik Christensen' },
+      { id: '7', name: 'Jens Carsten Kilian Christiansen' },
+      { id: '8', name: 'Mogens Dahl' },
+      { id: '9', name: 'Anton Edholm' },
+      { id: '10', name: 'Per Egekjær' },
+      { id: '11', name: 'Ib Kurt Grøn' },
+      { id: '12', name: 'Bjarne Halleby Hansen' },
+      { id: '13', name: 'Lars Rohde Hansen' },
+      { id: '14', name: 'Finn Hansen' },
+      { id: '15', name: 'Lars Bo Hansen' },
+      { id: '16', name: 'Ole John Hansen' },
+      { id: '17', name: 'Bent Kragh Jacobsen' },
+      { id: '18', name: 'Kurt Jensen' },
+      { id: '19', name: 'Claus Johnny Johansen' },
+      { id: '20', name: 'Kim Karlsson' },
+      { id: '21', name: 'John Kristensen' },
+      { id: '22', name: 'Bøje Skov Larsen' },
+      { id: '23', name: 'Niels-Ebbe Dalsø Larsen' },
+      { id: '24', name: 'Per Henchel Madsen' },
+      { id: '25', name: 'Bjørn Mikkelsen' },
+      { id: '26', name: 'Hans Nielsen' },
+      { id: '27', name: "Henry O'Connor" },
+      { id: '28', name: 'Lars Weide Olsen' },
+      { id: '29', name: 'Daniel Holm Olsen' },
+      { id: '30', name: 'Freddy Tage Ottosen' },
+      { id: '31', name: 'Gert Sunesen' },
+      { id: '32', name: 'Henning Søndermølle' },
+      { id: '33', name: 'Torben Møller Sørensen' }
+    ];
+  }
+
+  return { init, refreshFromSheet, render, openDeepLinkedEvent };
+})();
+
+
+const GalleryApp = (() => {
+  const CACHE_KEY = 'concordia_gallery_cache_v1';
+  const CACHE_MAX_AGE = 15 * 60 * 1000;
+
+  const config = Object.assign({
+    appsScriptUrl: '',
+    maxImageDimension: 1500,
+    jpegQuality: 0.75,
+    uploadConcurrency: 2,
+    confirmationAttempts: 5,
+    confirmationInitialDelay: 300,
+    confirmationRetryDelay: 500
+  }, window.CONCORDIA_GALLERY_CONFIG || {});
+
+  const state = {
+    initialized: false,
+    loaded: false,
+    loading: false,
+    images: [],
+    activeFolder: '',
+    cacheChecked: false,
+    cacheFound: false,
+    cachedAt: 0,
+    remoteChecked: false,
+    currentImageIndex: -1,
+    touchStartX: 0,
+    touchStartY: 0,
+    requestedFolder: new URLSearchParams(window.location.search).get('gallery') || '',
+    forceRefreshOnOpen: Boolean(new URLSearchParams(window.location.search).get('gallery'))
+  };
+
+  const els = {};
+
+  function cacheEls(){
+    els.grid = $('#galleryGrid');
+    els.syncStatus = $('#gallerySyncStatus');
+    els.uploadBtn = $('#galleryUploadBtn');
+    els.uploadModal = $('#galleryUploadModal');
+    els.uploadCloseBtn = $('#galleryUploadCloseBtn');
+    els.uploadForm = $('#galleryUploadForm');
+    els.uploaderName = $('#galleryUploaderName');
+    els.eventName = $('#galleryEventName');
+    els.fileInput = $('#galleryFileInput');
+    els.selectedFiles = $('#gallerySelectedFiles');
+    els.submitBtn = $('#galleryUploadSubmitBtn');
+    els.uploadStatus = $('#galleryUploadStatus');
+    els.progress = $('#galleryUploadProgress');
+    els.progressBar = els.progress?.querySelector('span');
+    els.imageModal = $('#galleryImageModal');
+    els.imageCloseBtn = $('#galleryImageCloseBtn');
+    els.imagePrevBtn = $('#galleryImagePrevBtn');
+    els.imageNextBtn = $('#galleryImageNextBtn');
+    els.largeImage = $('#galleryLargeImage');
+    els.largeCaption = $('#galleryLargeCaption');
+  }
+
+  function init(options = {}){
+    if(!state.initialized){
+      cacheEls();
+      if(!els.grid || !els.uploadBtn || !els.uploadModal) return;
+      bind();
+      restoreName();
+      populateActivityOptions();
+      restoreGalleryCache();
+      state.initialized = true;
+      render();
+    }
+    const forceFreshGallery = state.forceRefreshOnOpen;
+    if(options.load !== false && !state.loading && (!state.remoteChecked || forceFreshGallery)){
+      state.forceRefreshOnOpen = false;
+      loadGallery(forceFreshGallery);
+    }
+  }
+
+  function bind(){
+    els.uploadBtn.addEventListener('click', openUpload);
+    els.uploadCloseBtn?.addEventListener('click', () => els.uploadModal.close());
+    els.fileInput?.addEventListener('change', updateSelectedFiles);
+    els.uploadForm?.addEventListener('submit', uploadImages);
+    els.imageCloseBtn?.addEventListener('click', closeLargeImage);
+    els.imagePrevBtn?.addEventListener('click', () => showAdjacentImage(-1));
+    els.imageNextBtn?.addEventListener('click', () => showAdjacentImage(1));
+    els.imageModal?.addEventListener('click', event => {
+      if(event.target === els.imageModal) closeLargeImage();
+    });
+    els.imageModal?.addEventListener('touchstart', handleImageTouchStart, { passive: true });
+    els.imageModal?.addEventListener('touchend', handleImageTouchEnd, { passive: true });
+    els.largeImage?.addEventListener('load', preloadAdjacentImages);
+    document.addEventListener('keydown', handleGalleryKeydown);
+  }
+
+  function isConfigured(){
+    return /^https:\/\/script\.google\.com\/macros\/s\//.test(String(config.appsScriptUrl || '').trim());
+  }
+
+  function restoreName(){
+    try{
+      const saved = localStorage.getItem('concordia_gallery_uploader');
+      if(saved && els.uploaderName) els.uploaderName.value = saved;
+    }catch{}
+  }
+
+  function populateActivityOptions(){
+    if(!els.eventName) return;
+    const current = els.eventName.value;
+    const activityOptions = [...events]
+      .filter(item => item && item.title)
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+      .map(item => {
+        const dateText = item.date ? shortActivityDate(item.date) : '';
+        const label = [item.title, dateText].filter(Boolean).join(' · ');
+        return { value: label, label };
+      });
+
+    const unique = [];
+    const seen = new Set();
+    activityOptions.forEach(option => {
+      if(seen.has(option.value)) return;
+      seen.add(option.value);
+      unique.push(option);
+    });
+
+    els.eventName.innerHTML = [
+      '<option value="">Vælg aktivitet</option>',
+      ...unique.map(option => `<option value="${escapeAttr(option.value)}">${escapeHtml(option.label)}</option>`),
+      '<option value="Andet">Andet / ikke på listen</option>'
+    ].join('');
+
+    if(current && [...els.eventName.options].some(option => option.value === current)){
+      els.eventName.value = current;
+    }
+  }
+
+  function shortActivityDate(value){
+    const date = new Date(String(value) + 'T12:00:00');
+    if(Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'short', year: 'numeric' }).format(date);
+  }
+
+  function openUpload(){
+    init({ load: false });
+    els.uploadStatus.textContent = isConfigured() ? '' : 'Upload er ikke koblet til Google Drive endnu.';
+    els.submitBtn.disabled = !isConfigured();
+    els.uploadModal.showModal();
+  }
+
+  function restoreGalleryCache(){
+    if(state.cacheChecked) return state.cacheFound;
+    state.cacheChecked = true;
+
+    try{
+      const raw = localStorage.getItem(CACHE_KEY);
+      if(!raw) return false;
+      const cached = JSON.parse(raw);
+      if(!cached || !Array.isArray(cached.images)) throw new Error('Ugyldig cache');
+      state.images = cached.images;
+      state.cachedAt = Number(cached.savedAt || 0);
+      state.cacheFound = true;
+      state.loaded = true;
+      setGallerySummary();
+      return true;
+    }catch(error){
+      console.warn('Galleri-cachen kunne ikke bruges:', error);
+      try{ localStorage.removeItem(CACHE_KEY); }catch{}
+      state.cacheFound = false;
+      return false;
+    }
+  }
+
+  function writeGalleryCache(images){
+    try{
+      const savedAt = Date.now();
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt, images }));
+      state.cacheFound = true;
+      state.cachedAt = savedAt;
+    }catch(error){
+      console.warn('Kunne ikke gemme galleriet lokalt:', error);
+    }
+  }
+
+  function isGalleryCacheFresh(){
+    return state.cacheFound && state.cachedAt > 0 && Date.now() - state.cachedAt < CACHE_MAX_AGE;
+  }
+
+  function gallerySummary(){
+    const folderCount = new Set(state.images.map(image => image.event || 'Andet')).size;
+    return state.images.length
+      ? `${state.images.length} ${state.images.length === 1 ? 'billede' : 'billeder'} fordelt på ${folderCount} ${folderCount === 1 ? 'aktivitet' : 'aktiviteter'}.`
+      : 'Der er endnu ingen godkendte billeder.';
+  }
+
+  function setGallerySummary(suffix = ''){
+    if(!els.syncStatus) return;
+    els.syncStatus.textContent = `${gallerySummary()}${suffix ? ` ${suffix}` : ''}`;
+  }
+
+  async function loadGallery(force = false){
+    if(!state.initialized) init({ load: false });
+    if(!isConfigured()){
+      state.loaded = true;
+      state.images = [];
+      els.syncStatus.textContent = 'Galleriet mangler forbindelsen til Google Drive.';
+      render();
+      return;
+    }
+    restoreGalleryCache();
+    if(state.loading || (state.remoteChecked && !force)) return;
+
+    if(!force && isGalleryCacheFresh()){
+      state.remoteChecked = true;
+      setGallerySummary();
+      render();
+      return;
+    }
+
+    state.loading = true;
+    if(state.cacheFound){
+      setGallerySummary('Opdaterer i baggrunden…');
+    }else{
+      els.syncStatus.textContent = 'Henter billeder…';
+    }
+    render();
+
+    try{
+      const url = new URL(config.appsScriptUrl);
+      url.searchParams.set('action', 'listGallery');
+      url.searchParams.set('_', Date.now());
+      const response = await fetch(url.toString(), { cache: 'no-store' });
+      if(!response.ok) throw new Error('HTTP ' + response.status);
+      const data = await response.json();
+      if(data.ok === false) throw new Error(data.error || 'Ukendt fejl');
+      state.images = Array.isArray(data.images) ? data.images : [];
+      state.loaded = true;
+      state.remoteChecked = true;
+      writeGalleryCache(state.images);
+      setGallerySummary();
+    }catch(error){
+      console.error('Kunne ikke hente galleri', error);
+      if(state.cacheFound){
+        setGallerySummary('Viser den senest gemte version.');
+      }else{
+        state.images = [];
+        els.syncStatus.textContent = 'Kunne ikke hente galleriet.';
+      }
+    }finally{
+      state.loading = false;
+      render();
+    }
+  }
+
+  function render(){
+    if(!els.grid) return;
+    if(state.loading && !state.cacheFound){
+      els.grid.className = 'gallery-grid';
+      els.grid.innerHTML = '<div class="gallery-loading"><div class="loading-spinner" aria-hidden="true"></div><span>Henter galleri…</span></div>';
+      return;
+    }
+    if(!state.images.length){
+      els.grid.className = 'gallery-grid';
+      els.grid.innerHTML = '<div class="empty gallery-empty">Ingen billeder at vise endnu.</div>';
+      return;
+    }
+
+    const folders = groupByActivity(state.images);
+    applyRequestedFolder(folders);
+
+    if(!state.activeFolder || !folders.has(state.activeFolder)){
+      state.activeFolder = '';
+      els.grid.className = 'gallery-grid gallery-folder-grid';
+      els.grid.innerHTML = [...folders.entries()].map(([name, images]) => {
+        const cover = images[0] || {};
+        const latest = formatDate(cover.date);
+        return `
+          <button class="gallery-folder-card" type="button" data-gallery-folder="${escapeAttr(name)}" aria-label="Åbn mappen ${escapeAttr(name)}">
+            <div class="gallery-folder-cover">
+              <img src="${escapeAttr(cover.thumbnailUrl || cover.url || '')}" alt="" loading="lazy" decoding="async" fetchpriority="low">
+              <span class="gallery-folder-icon" aria-hidden="true">▰</span>
+            </div>
+            <div class="gallery-folder-info">
+              <strong>${escapeHtml(name)}</strong>
+              <span>${images.length} ${images.length === 1 ? 'billede' : 'billeder'}${latest ? ` · ${escapeHtml(latest)}` : ''}</span>
+            </div>
+          </button>`;
+      }).join('');
+
+      els.grid.querySelectorAll('[data-gallery-folder]').forEach(button => {
+        button.addEventListener('click', () => {
+          state.activeFolder = button.dataset.galleryFolder || '';
+          render();
+          document.querySelector('.gallery-list-block')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      });
+      return;
+    }
+
+    const folderImages = folders.get(state.activeFolder) || [];
+    els.grid.className = 'gallery-grid gallery-images-grid';
+    els.grid.innerHTML = `
+      <div class="gallery-folder-toolbar">
+        <button class="gallery-back-btn" type="button" data-gallery-back>‹ Alle aktiviteter</button>
+        <div>
+          <h3>${escapeHtml(state.activeFolder)}</h3>
+          <p>${folderImages.length} ${folderImages.length === 1 ? 'billede' : 'billeder'}</p>
+        </div>
+      </div>
+      ${folderImages.map(image => {
+        const imageIndex = state.images.indexOf(image);
+        const title = image.caption || image.event || 'Concordia';
+        const meta = [image.uploader ? `Foto: ${image.uploader}` : '', formatDate(image.date)].filter(Boolean).join(' · ');
+        return `
+          <button class="gallery-card" type="button" data-gallery-index="${imageIndex}" aria-label="Åbn ${escapeAttr(title)}">
+            <img src="${escapeAttr(image.thumbnailUrl || image.url || '')}" alt="${escapeAttr(title)}" loading="lazy" decoding="async" fetchpriority="low">
+            ${meta ? `<span>${escapeHtml(meta)}</span>` : ''}
+          </button>`;
+      }).join('')}`;
+
+    els.grid.querySelector('[data-gallery-back]')?.addEventListener('click', () => {
+      state.activeFolder = '';
+      render();
+    });
+    els.grid.querySelectorAll('[data-gallery-index]').forEach(button => {
+      button.addEventListener('click', () => openLargeImage(Number(button.dataset.galleryIndex)));
+    });
+  }
+
+  function normalizeFolderKey(value){
+    return String(value || '').trim().toLocaleLowerCase('da-DK');
+  }
+
+  function applyRequestedFolder(folders){
+    if(!state.requestedFolder || !folders.size) return;
+    const wanted = normalizeFolderKey(state.requestedFolder);
+    const match = [...folders.keys()].find(name => normalizeFolderKey(name) === wanted);
+    if(!match) return;
+    state.activeFolder = match;
+    state.requestedFolder = '';
+  }
+
+  function groupByActivity(images){
+    const groups = new Map();
+    images.forEach(image => {
+      const name = String(image.event || 'Andet').trim() || 'Andet';
+      if(!groups.has(name)) groups.set(name, []);
+      groups.get(name).push(image);
+    });
+    return new Map([...groups.entries()].sort((a, b) => {
+      const aDate = String(a[1][0]?.date || '');
+      const bDate = String(b[1][0]?.date || '');
+      return bDate.localeCompare(aDate) || a[0].localeCompare(b[0], 'da');
+    }));
+  }
+
+  function openLargeImage(index){
+    const image = state.images[index];
+    if(!image || !els.imageModal) return;
+    state.currentImageIndex = index;
+    showCurrentLargeImage();
+    if(!els.imageModal.open) els.imageModal.showModal();
+  }
+
+  function showCurrentLargeImage(){
+    const image = state.images[state.currentImageIndex];
+    if(!image || !els.imageModal) return;
+    const title = image.event || image.caption || 'Billede fra Concordia';
+    const details = [image.event, image.uploader ? `Foto: ${image.uploader}` : '', formatDate(image.date)].filter(Boolean).join(' · ');
+    const indexes = getActiveFolderIndexes();
+    const position = indexes.indexOf(state.currentImageIndex);
+    const counter = indexes.length > 1 && position >= 0 ? `${position + 1} af ${indexes.length}` : '';
+    els.largeImage.src = image.url || image.thumbnailUrl || '';
+    els.largeImage.alt = title;
+    els.largeCaption.textContent = [details || title, counter].filter(Boolean).join(' · ');
+    const showNavigation = indexes.length > 1;
+    if(els.imagePrevBtn) els.imagePrevBtn.hidden = !showNavigation;
+    if(els.imageNextBtn) els.imageNextBtn.hidden = !showNavigation;
+  }
+
+  function normalizedFolderName(image){
+    return String(image?.event || 'Andet').trim() || 'Andet';
+  }
+
+  function getActiveFolderIndexes(){
+    const current = state.images[state.currentImageIndex];
+    const folderName = state.activeFolder || normalizedFolderName(current);
+    return state.images.reduce((indexes, image, index) => {
+      if(normalizedFolderName(image) === folderName) indexes.push(index);
+      return indexes;
+    }, []);
+  }
+
+  function showAdjacentImage(direction){
+    if(!els.imageModal?.open || state.currentImageIndex < 0) return;
+    const indexes = getActiveFolderIndexes();
+    if(indexes.length < 2) return;
+    const currentPosition = Math.max(0, indexes.indexOf(state.currentImageIndex));
+    const nextPosition = (currentPosition + direction + indexes.length) % indexes.length;
+    state.currentImageIndex = indexes[nextPosition];
+    showCurrentLargeImage();
+  }
+
+  function preloadAdjacentImages(){
+    if(!els.imageModal?.open) return;
+    const indexes = getActiveFolderIndexes();
+    if(indexes.length < 2) return;
+    const currentPosition = indexes.indexOf(state.currentImageIndex);
+    [-1, 1].forEach(direction => {
+      const adjacentIndex = indexes[(currentPosition + direction + indexes.length) % indexes.length];
+      const adjacent = state.images[adjacentIndex];
+      const src = adjacent?.url || adjacent?.thumbnailUrl || '';
+      if(src){
+        const preload = new Image();
+        preload.decoding = 'async';
+        preload.src = src;
+      }
+    });
+  }
+
+  function handleGalleryKeydown(event){
+    if(!els.imageModal?.open) return;
+    if(event.key === 'ArrowLeft'){
+      event.preventDefault();
+      showAdjacentImage(-1);
+    }else if(event.key === 'ArrowRight'){
+      event.preventDefault();
+      showAdjacentImage(1);
+    }
+  }
+
+  function handleImageTouchStart(event){
+    const touch = event.touches?.[0];
+    if(!touch) return;
+    state.touchStartX = touch.clientX;
+    state.touchStartY = touch.clientY;
+  }
+
+  function handleImageTouchEnd(event){
+    const touch = event.changedTouches?.[0];
+    if(!touch) return;
+    const deltaX = touch.clientX - state.touchStartX;
+    const deltaY = touch.clientY - state.touchStartY;
+    state.touchStartX = 0;
+    state.touchStartY = 0;
+    if(Math.abs(deltaX) < 55 || Math.abs(deltaX) < Math.abs(deltaY) * 1.25) return;
+    showAdjacentImage(deltaX < 0 ? 1 : -1);
+  }
+
+  function closeLargeImage(){
+    if(!els.imageModal) return;
+    els.imageModal.close();
+    state.currentImageIndex = -1;
+  }
+
+  function updateSelectedFiles(){
+    const files = [...(els.fileInput.files || [])];
+    if(!files.length){
+      els.selectedFiles.textContent = 'Ingen billeder valgt.';
+      return;
+    }
+    const totalMb = files.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024;
+    els.selectedFiles.textContent = `${files.length} ${files.length === 1 ? 'billede valgt' : 'billeder valgt'} · ${totalMb.toFixed(1).replace('.', ',')} MB før komprimering`;
+  }
+
+  async function uploadImages(event){
+    event.preventDefault();
+    if(!isConfigured()){
+      els.uploadStatus.textContent = 'Upload er ikke koblet til Google Drive endnu.';
+      return;
+    }
+
+    const files = [...(els.fileInput.files || [])];
+    const uploader = els.uploaderName.value.trim();
+    const eventName = els.eventName.value.trim();
+
+    if(!uploader){
+      els.uploadStatus.textContent = 'Skriv dit navn.';
+      els.uploaderName.focus();
+      return;
+    }
+    if(!eventName){
+      els.uploadStatus.textContent = 'Vælg hvilken aktivitet billederne hører til.';
+      els.eventName.focus();
+      return;
+    }
+    if(!files.length){
+      els.uploadStatus.textContent = 'Vælg mindst ét billede.';
+      return;
+    }
+    if(files.some(file => !String(file.type || '').startsWith('image/'))){
+      els.uploadStatus.textContent = 'Der må kun vælges billedfiler.';
+      return;
+    }
+
+    try{ localStorage.setItem('concordia_gallery_uploader', uploader); }catch{}
+
+    const batchId = `gallery-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    setUploading(true);
+    setProgress(0);
+
+    try{
+      const concurrency = Math.min(files.length, Math.max(1, Math.min(3, Number(config.uploadConcurrency) || 2)));
+      let nextIndex = 0;
+      let completed = 0;
+      let cancelled = false;
+
+      const updateUploadStatus = () => {
+        els.uploadStatus.textContent = `Klargør og sender billeder… ${completed} af ${files.length} sendt`;
+        setProgress(4 + (completed / files.length) * 90);
+      };
+
+      updateUploadStatus();
+
+      const uploadWorker = async () => {
+        while(!cancelled){
+          const index = nextIndex++;
+          if(index >= files.length) return;
+
+          try{
+            const prepared = await prepareImage(files[index]);
+            await postImage({
+              batchId,
+              index: index + 1,
+              total: files.length,
+              uploader,
+              event: eventName,
+              filename: prepared.filename,
+              mimeType: prepared.mimeType,
+              data: prepared.base64
+            });
+            completed += 1;
+            updateUploadStatus();
+          }catch(error){
+            cancelled = true;
+            throw error;
+          }
+        }
+      };
+
+      await Promise.all(Array.from({ length: concurrency }, () => uploadWorker()));
+
+      els.uploadStatus.textContent = `${completed} af ${files.length} billeder sendt · kontrollerer upload…`;
+      setProgress(96);
+      const confirmed = await waitForConfirmation(batchId, files.length);
+      setProgress(100);
+      els.uploadStatus.textContent = confirmed
+        ? '✓ Billederne er sendt og afventer godkendelse.'
+        : 'Billederne er sendt. Google bekræftede ikke svaret, så kontrollér indbakken i Drive.';
+
+      els.fileInput.value = '';
+      updateSelectedFiles();
+      setTimeout(() => {
+        if(els.uploadModal.open) els.uploadModal.close();
+        setProgress(0);
+      }, 1800);
+    }catch(error){
+      console.error('Uploadfejl', error);
+      els.uploadStatus.textContent = readableUploadError(error);
+    }finally{
+      setUploading(false);
+    }
+  }
+
+  async function prepareImage(file){
+    const bitmap = await loadBitmap(file);
+    const maxDimension = Math.max(800, Number(config.maxImageDimension) || 1500);
+    const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    if(typeof bitmap.close === 'function') bitmap.close();
+
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(value => value ? resolve(value) : reject(new Error('Billedet kunne ikke komprimeres.')), 'image/jpeg', Number(config.jpegQuality) || 0.75);
+    });
+    const base64 = await blobToBase64(blob);
+    const stem = String(file.name || 'billede').replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9æøåÆØÅ _-]+/g, '').trim() || 'billede';
+    return {
+      filename: `${stem}.jpg`,
+      mimeType: 'image/jpeg',
+      base64
+    };
+  }
+
+  async function loadBitmap(file){
+    if('createImageBitmap' in window){
+      try{ return await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+      catch{}
+    }
+    return await new Promise((resolve, reject) => {
+      const image = new Image();
+      const url = URL.createObjectURL(file);
+      image.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve(image);
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Billedformatet kunne ikke læses. Prøv at gemme billedet som JPG først.'));
+      };
+      image.src = url;
+    });
+  }
+
+  async function blobToBase64(blob){
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+      reader.onerror = () => reject(new Error('Billedfilen kunne ikke læses.'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function postImage(payload){
+    const body = new URLSearchParams({ action: 'upload' });
+    Object.entries(payload).forEach(([key, value]) => body.set(key, String(value ?? '')));
+    await fetch(config.appsScriptUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      body
+    });
+  }
+
+  async function waitForConfirmation(batchId, expected){
+    const attempts = Math.max(1, Number(config.confirmationAttempts) || 5);
+    const initialDelay = Math.max(100, Number(config.confirmationInitialDelay) || 300);
+    const retryDelay = Math.max(250, Number(config.confirmationRetryDelay) || 500);
+
+    for(let attempt = 0; attempt < attempts; attempt++){
+      await sleep(attempt === 0 ? initialDelay : retryDelay);
+      try{
+        const url = new URL(config.appsScriptUrl);
+        url.searchParams.set('action', 'uploadStatus');
+        url.searchParams.set('batchId', batchId);
+        url.searchParams.set('_', Date.now());
+        const response = await fetch(url.toString(), { cache: 'no-store' });
+        const data = await response.json();
+        if(Number(data.count || 0) >= expected) return true;
+      }catch{}
+    }
+    return false;
+  }
+
+  function setUploading(active){
+    els.submitBtn.disabled = active;
+    els.fileInput.disabled = active;
+    els.uploaderName.disabled = active;
+    els.eventName.disabled = active;
+    els.progress.hidden = !active;
+    els.progress.setAttribute('aria-hidden', active ? 'false' : 'true');
+  }
+
+  function setProgress(percent){
+    if(els.progressBar) els.progressBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  }
+
+  function readableUploadError(error){
+    const message = String(error?.message || '');
+    if(message.includes('Billedformatet')) return message;
+    if(message.includes('komprimeres')) return message;
+    return 'Uploaden mislykkedes. Kontrollér forbindelsen og prøv igen.';
+  }
+
+  function formatDate(value){
+    if(!value) return '';
+    const date = new Date(value);
+    if(Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
+  }
+
+  function escapeHtml(value){
+    return String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
+  }
+
+  function escapeAttr(value){
+    return escapeHtml(value).replace(/`/g, '&#96;');
+  }
+
+  function sleep(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
+
+  return { init, loadGallery };
+})();
+
+
+const NotificationManager = (() => {
+  const DISMISSED_KEY = 'concordia-notification-prompt-dismissed-v1';
+  let OneSignalInstance = null;
+  let busy = false;
+
+  function isIos(){
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+
+  function isStandalone(){
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  }
+
+  function setPromptVisible(visible){
+    if(notificationPromptCard) notificationPromptCard.hidden = !visible;
+  }
+
+  function setHelp(text=''){
+    if(!notificationHelpText) return;
+    notificationHelpText.textContent = text;
+    notificationHelpText.hidden = !text;
+  }
+
+  async function getState(){
+    if(!OneSignalInstance) return { ready: false };
+    const supported = await Promise.resolve(OneSignalInstance.Notifications.isPushSupported());
+    const permission = Boolean(OneSignalInstance.Notifications.permission);
+    const optedIn = Boolean(OneSignalInstance.User.PushSubscription.optedIn);
+    const browserPermission = typeof Notification === 'undefined' ? 'default' : Notification.permission;
+    return { ready: true, supported, permission, optedIn, browserPermission };
+  }
+
+  async function refresh(){
+    const state = await getState();
+    if(!state.ready) return;
+
+    if(notificationToggleBtn) notificationToggleBtn.disabled = busy;
+
+    if(!state.supported){
+      setPromptVisible(false);
+      if(notificationStatusText) notificationStatusText.textContent = 'Denne browser kan ikke modtage beskeder fra appen.';
+      if(notificationToggleBtn){
+        notificationToggleBtn.textContent = 'Ikke understøttet';
+        notificationToggleBtn.disabled = true;
+      }
+      setHelp('Prøv appen i Chrome, Edge, Firefox eller Safari på en understøttet enhed.');
+      return;
+    }
+
+    if(isIos() && !isStandalone()){
+      setPromptVisible(localStorage.getItem(DISMISSED_KEY) !== '1');
+      if(notificationPromptText) notificationPromptText.textContent = 'På iPhone skal appen først føjes til hjemmeskærmen.';
+      if(notificationPromptBtn) notificationPromptBtn.textContent = 'Se hvordan';
+      if(notificationStatusText) notificationStatusText.textContent = 'På iPhone virker beskeder kun, når appen er føjet til hjemmeskærmen.';
+      if(notificationToggleBtn){
+        notificationToggleBtn.textContent = 'Sådan installerer du appen';
+        notificationToggleBtn.disabled = false;
+      }
+      setHelp('Tryk på Del i Safari, vælg “Føj til hjemmeskærm”, og åbn derefter appen fra ikonet.');
+      return;
+    }
+
+    if(state.browserPermission === 'denied'){
+      setPromptVisible(false);
+      if(notificationStatusText) notificationStatusText.textContent = 'Beskeder fra appen er blokeret i browserens indstillinger.';
+      if(notificationToggleBtn){
+        notificationToggleBtn.textContent = 'Blokeret i browseren';
+        notificationToggleBtn.disabled = true;
+      }
+      setHelp('Åbn browserens indstillinger for siden og skift Notifikationer fra “Bloker” til “Tillad”.');
+      return;
+    }
+
+    if(state.optedIn){
+      setPromptVisible(false);
+      if(notificationStatusText) notificationStatusText.textContent = 'Beskeder fra appen er slået til på denne enhed.';
+      if(notificationToggleBtn){
+        notificationToggleBtn.textContent = 'Slå beskeder fra';
+        notificationToggleBtn.disabled = busy;
+        notificationToggleBtn.classList.remove('primary');
+        notificationToggleBtn.classList.add('soft');
+      }
+      setHelp('Du får besked om nye aktiviteter, nye godkendte forslag, nye billeder og tilmeldingsfrister til logeaftener.');
+      return;
+    }
+
+    const dismissed = localStorage.getItem(DISMISSED_KEY) === '1';
+    setPromptVisible(!dismissed);
+    if(notificationPromptText) notificationPromptText.textContent = 'Slå beskeder til, så du får besked om nye aktiviteter, forslag, billeder og tilmeldingsfrister.';
+    if(notificationPromptBtn) notificationPromptBtn.textContent = state.permission ? 'Slå til igen' : 'Slå til';
+    if(notificationStatusText) notificationStatusText.textContent = state.permission
+      ? 'Tilladelsen er givet, men abonnementet er slået fra.'
+      : 'Beskeder fra appen er ikke slået til på denne enhed.';
+    if(notificationToggleBtn){
+      notificationToggleBtn.textContent = state.permission ? 'Slå beskeder til igen' : 'Slå beskeder til';
+      notificationToggleBtn.disabled = busy;
+      notificationToggleBtn.classList.remove('soft');
+      notificationToggleBtn.classList.add('primary');
+    }
+    setHelp('Browseren spørger om tilladelse. Vælg “Tillad”, hvis du vil modtage beskeder fra appen.');
+  }
+
+  async function toggle(){
+    if(!OneSignalInstance || busy) return;
+
+    if(isIos() && !isStandalone()){
+      setHelp('Åbn siden i Safari, tryk Del → Føj til hjemmeskærm, og åbn appen fra ikonet.');
+      const aboutButton = document.querySelector('[data-view="about"]');
+      aboutButton?.click();
+      document.querySelector('#notificationSettings')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    busy = true;
+    if(notificationToggleBtn) notificationToggleBtn.disabled = true;
+    if(notificationPromptBtn) notificationPromptBtn.disabled = true;
+
+    try{
+      const optedIn = Boolean(OneSignalInstance.User.PushSubscription.optedIn);
+      if(optedIn){
+        await OneSignalInstance.User.PushSubscription.optOut();
+      }else{
+        localStorage.removeItem(DISMISSED_KEY);
+        await OneSignalInstance.User.PushSubscription.optIn();
+      }
+    }catch(error){
+      console.error('Kunne ikke ændre notifikationsstatus', error);
+      setHelp('Det lykkedes ikke. Kontrollér browserens tilladelse til beskeder og prøv igen.');
+    }finally{
+      busy = false;
+      if(notificationPromptBtn) notificationPromptBtn.disabled = false;
+      setTimeout(refresh, 250);
+    }
+  }
+
+  function init(){
+    const ready = window.OneSignalReady || Promise.reject(new Error('OneSignal er ikke initialiseret.'));
+    ready.then(async OneSignal => {
+      OneSignalInstance = OneSignal;
+      OneSignal.Notifications.addEventListener('permissionChange', refresh);
+      OneSignal.User.PushSubscription.addEventListener('change', refresh);
+      await refresh();
+    }).catch(error => {
+      console.error('OneSignal er ikke tilgængelig', error);
+      setPromptVisible(false);
+      if(notificationStatusText) notificationStatusText.textContent = 'Notifikationstjenesten kunne ikke startes.';
+      if(notificationToggleBtn){
+        notificationToggleBtn.textContent = 'Ikke tilgængelig';
+        notificationToggleBtn.disabled = true;
+      }
+      setHelp('Kontrollér internetforbindelsen og genindlæs appen.');
+    });
+
+    notificationToggleBtn?.addEventListener('click', toggle);
+    notificationPromptBtn?.addEventListener('click', toggle);
+    notificationPromptDismiss?.addEventListener('click', () => {
+      localStorage.setItem(DISMISSED_KEY, '1');
+      setPromptVisible(false);
+    });
+  }
+
+  return { init, refresh };
+})();
+
+NotificationManager.init();
+
+let deferredPrompt;
+const installBtn = $('#installBtn');
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  installBtn.hidden = false;
+});
+
+installBtn.addEventListener('click', async () => {
+  if(!deferredPrompt) return;
+  deferredPrompt.prompt();
+  await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  installBtn.hidden = true;
+});
+
+const appVersion = $('#appVersion');
+if(appVersion) appVersion.textContent = APP_VERSION;
+
+const UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000;
+const UPDATE_CHECK_THROTTLE_MS = 15 * 1000;
+const UPDATE_RESUME_AFTER_MS = 60 * 1000;
+
+let serviceWorkerRegistration = null;
+let lastUpdateCheck = 0;
+let hiddenAt = 0;
+let reloadingForUpdate = false;
+const hadServiceWorkerControllerAtStartup = Boolean(navigator.serviceWorker?.controller);
+
+function showUpdatingScreen(){
+  if(!loadingScreen) return;
+  const loadingText = loadingScreen.querySelector('.loading-text');
+  if(loadingText) loadingText.textContent = 'Appen opdateres…';
+  loadingScreen.classList.remove('hidden');
+}
+
+function userIsBusy(){
+  const openDialog = document.querySelector('dialog[open]');
+  const activeElement = document.activeElement;
+  const editingField = activeElement?.matches?.('input, textarea, select');
+  return Boolean(openDialog || editingField);
+}
+
+function activateWaitingWorker(registration){
+  if(!registration?.waiting || !navigator.serviceWorker.controller) return;
+  showUpdatingScreen();
+  registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+}
+
+async function checkForAppUpdate(force = false){
+  if(!serviceWorkerRegistration || !navigator.onLine) return;
+  if(!force && Date.now() - lastUpdateCheck < UPDATE_CHECK_THROTTLE_MS) return;
+  if(!force && userIsBusy()) return;
+
+  lastUpdateCheck = Date.now();
+  try{
+    await serviceWorkerRegistration.update();
+    activateWaitingWorker(serviceWorkerRegistration);
+  }catch(error){
+    console.warn('Kunne ikke kontrollere for en ny appversion', error);
+  }
+}
+
+function watchInstallingWorker(worker){
+  if(!worker) return;
+  worker.addEventListener('statechange', () => {
+    if(worker.state === 'installed' && navigator.serviceWorker.controller){
+      showUpdatingScreen();
+      worker.postMessage({ type: 'SKIP_WAITING' });
+    }
+  });
+}
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if(reloadingForUpdate || !hadServiceWorkerControllerAtStartup) return;
+    reloadingForUpdate = true;
+    showUpdatingScreen();
+    setTimeout(() => window.location.reload(), 150);
+  });
+
+  window.addEventListener('load', async () => {
+    try{
+      serviceWorkerRegistration = await navigator.serviceWorker.register(
+        `sw.js?v=${encodeURIComponent(APP_VERSION)}`,
+        { updateViaCache: 'none' }
+      );
+
+      activateWaitingWorker(serviceWorkerRegistration);
+      watchInstallingWorker(serviceWorkerRegistration.installing);
+
+      serviceWorkerRegistration.addEventListener('updatefound', () => {
+        watchInstallingWorker(serviceWorkerRegistration.installing);
+      });
+
+      await checkForAppUpdate(true);
+
+      window.setInterval(() => {
+        if(document.visibilityState === 'visible') checkForAppUpdate();
+      }, UPDATE_CHECK_INTERVAL_MS);
+    }catch(error){
+      console.error('Service worker kunne ikke registreres', error);
+    }
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState === 'hidden'){
+      hiddenAt = Date.now();
+      return;
+    }
+
+    const wasHiddenLongEnough = hiddenAt && Date.now() - hiddenAt >= UPDATE_RESUME_AFTER_MS;
+    hiddenAt = 0;
+    if(wasHiddenLongEnough) checkForAppUpdate();
+  });
+
+  window.addEventListener('online', () => checkForAppUpdate(true));
+}
+
+init();
